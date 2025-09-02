@@ -182,6 +182,89 @@ detectEdgeDryspots <- function(
   return(spe)
 }
 
+#' Calculate edge zones for spots based on distance from tissue boundaries
+#'
+#' @param spe A SpatialExperiment object
+#' @param samples Character string specifying the sample ID column name
+#' @return Character vector of edge zone classifications ("1", "2", "3", "interior")
+#' @importFrom SpatialExperiment spatialCoords
+#' @importFrom stats quantile
+#' @keywords internal
+
+calculateEdgeZones <- function(spe, samples) {
+  edge_zones <- rep("interior", nrow(colData(spe)))
+
+  # Process each sample separately
+  sample_list <- unique(colData(spe)[[samples]])
+
+  for (sample_id in sample_list) {
+    sample_spots <- which(colData(spe)[[samples]] == sample_id & colData(spe)$in_tissue)
+
+    if (length(sample_spots) > 0) {
+      # Get coordinates for this sample
+      coords <- spatialCoords(spe)[sample_spots, ]
+
+      # Calculate distance from boundary for each spot
+      # Simple approach: distance from min/max coordinates
+      x_dist_from_edge <- pmin(coords[,1] - min(coords[,1]), max(coords[,1]) - coords[,1])
+      y_dist_from_edge <- pmin(coords[,2] - min(coords[,2]), max(coords[,2]) - coords[,2])
+      dist_from_edge <- pmin(x_dist_from_edge, y_dist_from_edge)
+
+      # Classify by percentiles
+      percentiles <- quantile(dist_from_edge, c(0.33, 0.66))
+
+      edge_zones[sample_spots[dist_from_edge <= percentiles[1]]] <- "1"
+      edge_zones[sample_spots[dist_from_edge <= percentiles[2] & dist_from_edge > percentiles[1]]] <- "2"
+      edge_zones[sample_spots[dist_from_edge > percentiles[2]]] <- "3"
+    }
+  }
+
+  return(edge_zones)
+}
+
+#' Classify sample position relative to array boundaries
+#'
+#' @param spe A SpatialExperiment object
+#' @param samples Character string specifying the sample ID column name
+#' @return Character vector of sample position classifications ("corner", "edge", "interior")
+#' @importFrom SpatialExperiment spatialCoords
+#' @keywords internal
+
+calculateSamplePosition <- function(spe, samples) {
+  sample_positions <- rep("interior", nrow(colData(spe)))
+
+  # Process each sample separately
+  sample_list <- unique(colData(spe)[[samples]])
+
+  for (sample_id in sample_list) {
+    sample_spots <- which(colData(spe)[[samples]] == sample_id & colData(spe)$in_tissue)
+
+    if (length(sample_spots) > 0) {
+      coords <- spatialCoords(spe)[sample_spots, ]
+
+      # Check if sample touches array boundaries
+      # Assuming standard Visium array coordinates
+      touches_left <- min(coords[,1]) <= 1  # Close to minimum array position
+      touches_right <- max(coords[,1]) >= 77  # Close to maximum array position
+      touches_top <- min(coords[,2]) <= 1
+      touches_bottom <- max(coords[,2]) >= 127
+
+      open_sides <- sum(c(touches_left, touches_right, touches_top, touches_bottom))
+
+      # Classify entire sample based on boundary contact
+      if (open_sides >= 2) {
+        sample_positions[sample_spots] <- "corner"
+      } else if (open_sides == 1) {
+        sample_positions[sample_spots] <- "edge"
+      } else {
+        sample_positions[sample_spots] <- "interior"
+      }
+    }
+  }
+
+  return(sample_positions)
+}
+
 #' Classify edge dryspots into categories for quality control (Enhanced Version)
 #'
 #' This function classifies detected edge dryspots and problem areas into 
@@ -314,17 +397,15 @@ classifyEdgeDryspots <- function(
                paste0(name, "_classification")] <- "edge"
   
   # ============================================================================
-  # ENHANCED CLASSIFICATIONS (NEW) - Fixed Priority Logic
+  # ENHANCED CLASSIFICATIONS
   # ============================================================================
   
   # Initialize enhanced classification
   colData(spe)[[paste0(name, "_enhanced")]] <- "none"
-  
-  # Classify based on edge zones (placeholder - will be implemented in Phase 2)
-  colData(spe)[[paste0(name, "_edge_zone")]] <- "interior"
-  
-  # Sample type classification (placeholder - will be implemented in Phase 5)
-  colData(spe)[[paste0(name, "_sample_type")]] <- "unknown"
+ 
+  colData(spe)[[paste0(name, "_edge_zone")]] <- calculateEdgeZones(spe, samples)
+ 
+  colData(spe)[[paste0(name, "_sample_type")]] <- calculateSamplePosition(spe, samples)
   
   # Enhanced categories with proper priority order
   # 1. HIGHEST PRIORITY: Edge dryspots (these are the actual edges detected)

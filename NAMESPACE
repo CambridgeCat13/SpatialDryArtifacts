@@ -2,8 +2,10 @@
 
 export(classifyEdgeDryspots)
 export(detectEdgeDryspots)
+importFrom(SpatialExperiment,spatialCoords)
 importFrom(SummarizedExperiment,"colData<-")
 importFrom(SummarizedExperiment,colData)
 importFrom(dplyr,"%>%")
 importFrom(dplyr,sym)
 importFrom(scuttle,isOutlier)
+importFrom(stats,quantile)
