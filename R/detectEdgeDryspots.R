@@ -21,11 +21,16 @@
 #'
 #' @examples
 #' # Enhanced usage with improved sensitivity
+#' \dontrun{
 #' spe <- detectEdgeDryspots(spe, edge_threshold = 0.5, min_cluster_size = 15)
 #' 
 #' # More aggressive detection
 #' spe <- detectEdgeDryspots(spe, edge_threshold = 0.4, min_cluster_size = 10)
 #'
+#' }
+#' @importFrom dplyr %>% sym
+#' @importFrom SummarizedExperiment colData colData<-
+#' @importFrom scuttle isOutlier
 #' @export
 detectEdgeDryspots <- function(
     spe, 
@@ -201,11 +206,13 @@ detectEdgeDryspots <- function(
 #'
 #' @examples
 #' # Basic usage (after running detectEdgeDryspots)
+#' \dontrun{
 #' spe <- classifyEdgeDryspots(spe)
 #' 
 #' # View enhanced classifications
 #' table(spe$edge_dryspot_enhanced)
 #' table(spe$edge_dryspot_edge_zone)
+#' }
 #'
 #' @export
 classifyEdgeDryspots <- function(
