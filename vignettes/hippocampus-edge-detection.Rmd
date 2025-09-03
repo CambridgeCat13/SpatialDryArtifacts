@@ -1,0 +1,234 @@
+---
+title: "Edge Dryspot Detection in Human Hippocampus Data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Edge Dryspot Detection in Human Hippocampus Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(SpatialDryArtifacts)
+library(ExperimentHub)
+library(ggplot2)
+library(gridExtra)
+```
+
+Introduction
+This vignette demonstrates how to use SpatialDryArtifacts to detect and classify edge dryspots in spatial transcriptomics data using human hippocampus samples.
+
+Loading Data
+We'll use the human hippocampus dataset from ExperimentHub:
+
+library(SpatialDryArtifacts)
+library(ExperimentHub)
+library(ggplot2)
+library(gridExtra)
+
+```{r loadingData}
+# Load hippocampus data
+eh <- ExperimentHub()
+myfiles <- query(eh, "humanHippocampus2024")
+spatial_hpc_spe <- myfiles[["EH9605"]]
+cat("Total samples:", length(unique(spatial_hpc_spe$sample_id)), "\n")
+cat("Total spots:", ncol(spatial_hpc_spe), "\n")
+```
+Edge Dryspot Detection
+We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
+
+```{r detectingSpot}
+# Apply edge dryspot detection to all samples
+spe_detected <- detectEdgeDryspots(
+  spatial_hpc_spe,
+  qc_metric = "sum_gene",
+  samples = "sample_id",
+  mad_threshold = 1.8,
+  edge_threshold = 0.2,
+  min_cluster_size = 3,
+  name = "edge_dryspot"
+)
+
+# Apply enhanced classification
+spe_classified <- classifyEdgeDryspots(spe_detected)
+```
+
+Visualization: QC Metrics and Detection Results
+We'll create a comprehensive visualization showing QC metrics and detection results for all samples:
+```{r plot}
+# Get all unique samples
+all_samples <- unique(spe_classified$sample_id)
+
+# Create plotting function for each sample
+create_sample_plots <- function(sample_id, spe_data) {
+  
+  # Extract single sample
+  spe_sample <- spe_data[, spe_data$sample_id == sample_id]
+  coords <- spatialCoords(spe_sample)
+  in_tissue <- spe_sample$in_tissue
+  
+  plot_data <- data.frame(
+    x = coords[in_tissue, 1],
+    y = coords[in_tissue, 2],
+    sum_umi = spe_sample$sum_umi[in_tissue],
+    sum_gene = spe_sample$sum_gene[in_tissue],
+    expr_chrM_ratio = ifelse(is.na(spe_sample$expr_chrM_ratio[in_tissue]), 0, 
+                             spe_sample$expr_chrM_ratio[in_tissue]),
+    edge_flagged = spe_sample$edge_dryspot_edge[in_tissue]
+  )
+  
+  # Base theme
+  base_theme <- theme_void() + 
+    theme(plot.title = element_text(size = 8, hjust = 0.5),
+          legend.position = "none")
+  
+  # Create 4 plots per sample
+  p1 <- ggplot(plot_data, aes(x = x, y = y, color = log10(sum_umi + 1))) +
+    geom_point(size = 0.3, alpha = 0.7) +
+    scale_color_viridis_c(name = "log10(UMI)") +
+    ggtitle(paste(sample_id, "- UMI")) +
+    base_theme + coord_fixed()
+  
+  p2 <- ggplot(plot_data, aes(x = x, y = y, color = log10(sum_gene + 1))) +
+    geom_point(size = 0.3, alpha = 0.7) +
+    scale_color_viridis_c(name = "log10(Gene)", option = "plasma") +
+    ggtitle(paste(sample_id, "- Genes")) +
+    base_theme + coord_fixed()
+  
+  p3 <- ggplot(plot_data, aes(x = x, y = y, color = expr_chrM_ratio)) +
+    geom_point(size = 0.3, alpha = 0.7) +
+    scale_color_viridis_c(name = "Mito Ratio", option = "inferno") +
+    ggtitle(paste(sample_id, "- Mito")) +
+    base_theme + coord_fixed()
+  
+  p4 <- ggplot(plot_data, aes(x = x, y = y, color = edge_flagged)) +
+    geom_point(size = 0.3, alpha = 0.7) +
+    scale_color_manual(values = c("FALSE" = "lightgray", "TRUE" = "red"), 
+                       name = "Edge") +
+    ggtitle(paste(sample_id, "- Flagged")) +
+    base_theme + coord_fixed()
+  
+  return(list(p1, p2, p3, p4))
+}
+
+# Generate plots for all samples
+cat("Generating plots for", length(all_samples), "samples...\n")
+all_plots <- list()
+
+for (sample_id in all_samples) {
+  sample_plots <- create_sample_plots(sample_id, spe_classified)
+  all_plots <- append(all_plots, sample_plots)
+}
+
+# Create combined visualization (36 rows x 4 columns)
+combined_plot <- do.call(gridExtra::grid.arrange, c(
+  all_plots,
+  ncol = 4,  # 4 columns: UMI, Genes, Mito, Flagged
+  nrow = length(all_samples),  # One row per sample
+  top = "Human Hippocampus Edge Dryspot Detection - All Samples"
+))
+
+print(combined_plot)
+```
+
+Classification Summary
+Let's examine the enhanced classification system:
+```{r classification}
+# Create classification summary table
+classification_summary <- table(spe_classified$edge_dryspot_enhanced)
+print("Enhanced Classification Summary:")
+print(classification_summary)
+
+# Calculate percentages
+classification_pct <- round(100 * classification_summary / sum(classification_summary), 2)
+print("Classification Percentages:")
+print(classification_pct)
+
+# Create summary data frame
+summary_df <- data.frame(
+  Classification = names(classification_summary),
+  Count = as.numeric(classification_summary),
+  Percentage = as.numeric(classification_pct)
+)
+
+print(summary_df)
+
+# Sample-wise summary
+sample_summary <- aggregate(
+  spe_classified$edge_dryspot_edge, 
+  by = list(Sample = spe_classified$sample_id), 
+  FUN = function(x) sum(x, na.rm = TRUE)
+)
+names(sample_summary)[2] <- "Edge_Spots_Detected"
+
+sample_summary$Total_Spots <- aggregate(
+  spe_classified$in_tissue, 
+  by = list(spe_classified$sample_id), 
+  FUN = sum
+)$x
+
+sample_summary$Detection_Percentage <- round(
+  100 * sample_summary$Edge_Spots_Detected / sample_summary$Total_Spots, 2
+)
+
+print("Sample-wise Detection Summary:")
+print(sample_summary)
+```
+Quality Control Validation
+Finally, let's validate that flagged spots have lower quality metrics:
+
+```{r validation}
+# Create QC comparison data
+in_tissue_data <- spe_classified[, spe_classified$in_tissue]
+
+qc_data <- data.frame(
+  sum_umi = in_tissue_data$sum_umi,
+  sum_gene = in_tissue_data$sum_gene,
+  expr_chrM_ratio = ifelse(is.na(in_tissue_data$expr_chrM_ratio), 0, 
+                           in_tissue_data$expr_chrM_ratio),
+  flagged = in_tissue_data$edge_dryspot_edge
+)
+
+# Calculate median differences
+flagged_umi <- median(qc_data$sum_umi[qc_data$flagged])
+nonflagged_umi <- median(qc_data$sum_umi[!qc_data$flagged])
+
+flagged_gene <- median(qc_data$sum_gene[qc_data$flagged])
+nonflagged_gene <- median(qc_data$sum_gene[!qc_data$flagged])
+
+cat("QC Validation Results:\n")
+cat("Flagged spots - Median UMI:", flagged_umi, "\n")
+cat("Non-flagged spots - Median UMI:", nonflagged_umi, "\n")
+cat("UMI difference:", nonflagged_umi - flagged_umi, "\n\n")
+
+cat("Flagged spots - Median Genes:", flagged_gene, "\n")
+cat("Non-flagged spots - Median Genes:", nonflagged_gene, "\n")
+cat("Gene difference:", nonflagged_gene - flagged_gene, "\n")
+
+# Create validation boxplot
+qc_data$flag_status <- ifelse(qc_data$flagged, "Flagged", "Non-Flagged")
+
+validation_plot <- ggplot(qc_data, aes(x = flag_status, y = log10(sum_umi + 1))) +
+  geom_boxplot(fill = c("lightcoral", "lightblue")) +
+  labs(title = "QC Validation: UMI Counts in Flagged vs Non-Flagged Spots",
+       x = "Flag Status", y = "log10(UMI Count)") +
+  theme_minimal()
+
+print(validation_plot)
+```
+
+Conclusion
+This vignette demonstrates:
+
+Edge dryspot detection using balanced parameters on human hippocampus data
+Comprehensive visualization showing QC metrics and detection results across all samples
+Enhanced classification system with mechanistically-informed categories
+Quality control validation confirming that flagged spots have lower quality metrics
+
+The detection successfully identifies problematic spots while preserving high-quality tissue for downstream analysis.
