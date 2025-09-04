@@ -45,9 +45,9 @@ focal_transformations <- function(raster_object, min_cluster_size = 40) {
   rev_r3[r3_s==1] = 0
   rev_c3 = raster::clump(rev_r3)
   
-  dimnames(rev_c3) <- NULL
-  rev_c3 <- as.matrix(rev_c3)
-  tbl = table(rev_c3)
+  message("[focal_transformations] Step 6: Extracting values...")
+  vals <- raster::getValues(rev_c3)     # change
+  tbl  <- table(vals, useNA = "no")     # change
   # FIXED: Now uses parameter instead of hard-coded 40
   flip_clump = as.numeric(names(tbl)[tbl < min_cluster_size])
   r4 = r3_s
