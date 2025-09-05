@@ -33,24 +33,33 @@ my_outline <- function(x) {
 #' @param min_cluster_size Minimum cluster size threshold (default: 40)
 #' @return Processed raster object
 focal_transformations <- function(raster_object, min_cluster_size = 40) {
-  r2 <- raster::focal(raster_object, w=matrix(1,3,3), fun=my_fill, pad=T, padValue=1)
-  r3 <- raster::focal(r2, w=matrix(1,5,5), fun=my_outline, pad=T, padValue=1)
+
+  r2   <- raster::focal(raster_object, w = matrix(1, 3, 3), fun = my_fill,    pad = TRUE, padValue = 1)
+  r3   <- raster::focal(r2,              w = matrix(1, 5, 5), fun = my_outline, pad = TRUE, padValue = 1)
+
+  star.m      <- matrix(rep(c(0, 1), length.out = 9), 3, 3)
+  star.m[5]   <- 1
+  r3_s        <- raster::focal(r3, star.m, fun = my_fill_star, pad = TRUE, padValue = 1)
+
+  rev_r3      <- r3_s
+  rev_r3[r3_s == 0] <- 1
+  rev_r3[r3_s == 1] <- 0
+
+  rev_c3 <- raster::clump(rev_r3)
   
-  star.m = matrix(rep(c(0,1), length.out=9), 3, 3)
-  star.m[5] = 1
-  r3_s <- raster::focal(r3, star.m, fun=my_fill_star, pad=T, padValue=1)
-  
-  rev_r3 = r3_s
-  rev_r3[r3_s==0] = 1
-  rev_r3[r3_s==1] = 0
-  rev_c3 = raster::clump(rev_r3)
-  
-  tbl = table(as.matrix(rev_c3))
-  # FIXED: Now uses parameter instead of hard-coded 40
-  flip_clump = as.numeric(names(tbl)[tbl < min_cluster_size])
-  r4 = r3_s
-  r4[rev_c3 %in% flip_clump] = 1
-  
+  message("[patched focal_transformations] using getValues()")
+
+  #avoid as.matrix()/array() which cause dimname to produce error
+  vals <- raster::getValues(rev_c3)
+  tbl  <- table(vals, useNA = "no")
+
+  flip_clump <- as.numeric(names(tbl)[tbl < min_cluster_size])
+
+  r4 <- r3_s
+  # 用 cell 索引替换小簇，保持 rev_c3 为 RasterLayer
+  idx <- which(!is.na(vals) & vals %in% flip_clump)
+  r4[idx] <- 1
+
   return(r4)
 }
 
