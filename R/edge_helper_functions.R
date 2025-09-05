@@ -43,32 +43,13 @@ focal_transformations <- function(raster_object, min_cluster_size = 40) {
   rev_r3 = r3_s
   rev_r3[r3_s==0] = 1
   rev_r3[r3_s==1] = 0
-  
-  message("[focal_transformations] About to run clump...")
   rev_c3 = raster::clump(rev_r3)
   
-  message("[focal_transformations] Clump result class: ", class(rev_c3))
-  message("[focal_transformations] Clump result dim: ", paste(dim(rev_c3), collapse="x"))
-  
-  # 添加安全检查
-  if(is.null(rev_c3) || !inherits(rev_c3, "RasterLayer")) {
-    message("[focal_transformations] ERROR: Invalid clump result, returning original")
-    return(r3_s)
-  }
-  
-  vals <- raster::getValues(rev_c3)
-  if(is.null(vals) || length(vals) == 0) {
-    message("[focal_transformations] ERROR: No values from clump, returning original")
-    return(r3_s)
-  }
-  
-  tbl <- table(vals, useNA = "no")
+  tbl = table(as.matrix(rev_c3))
+  # FIXED: Now uses parameter instead of hard-coded 40
   flip_clump = as.numeric(names(tbl)[tbl < min_cluster_size])
-  
   r4 = r3_s
-  if(length(flip_clump) > 0) {
-    r4[rev_c3 %in% flip_clump] = 1
-  }
+  r4[rev_c3 %in% flip_clump] = 1
   
   return(r4)
 }
