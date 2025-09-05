@@ -15,6 +15,8 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
+pkgload::load_all("..", export_all = TRUE)
+knitr::opts_chunk$set(cache = FALSE)
 library(SpatialDryArtifacts)
 library(ExperimentHub)
 library(ggplot2)
@@ -43,7 +45,7 @@ cat("Total spots:", ncol(spatial_hpc_spe), "\n")
 Edge Dryspot Detection
 We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
 
-```{r detectingSpot}
+```{r detectingSpot, cache=FALSE}
 # Clear R session state to prevent cumulative raster errors
 gc()  # Force garbage collection
 if(requireNamespace("raster", quietly = TRUE)) {
