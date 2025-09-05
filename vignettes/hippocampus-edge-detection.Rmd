@@ -44,6 +44,12 @@ Edge Dryspot Detection
 We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
 
 ```{r detectingSpot}
+# Clear R session state to prevent cumulative raster errors
+gc()  # Force garbage collection
+if(requireNamespace("raster", quietly = TRUE)) {
+  raster::removeTmpFiles(h=0)  # Clear raster temporary files
+}
+
 # Apply edge dryspot detection to all samples
 spe_detected <- detectEdgeDryspots(
   spatial_hpc_spe,
