@@ -100,58 +100,60 @@ lookupKeyDF <- function(.xy, results_df) {
 #' @param edge_threshold Edge coverage threshold (default: 0.6, was 0.75)
 #' @param min_cluster_size Minimum cluster size for morphological cleaning (default: 40)
 #' @return Vector of edge spot names
-clumpEdges <- function(.xyz, offTissue, shifted=FALSE, edge_threshold=0.6, min_cluster_size=40) {
-  if(ncol(.xyz) >= 3) {
+clumpEdges <- function(.xyz,
+                       offTissue,
+                       shifted = FALSE,
+                       edge_threshold = 0.6,
+                       min_cluster_size = 40) {
+
+  if (ncol(.xyz) >= 3)
     .xyz[, 3][is.na(.xyz[, 3])] <- FALSE
-  }
-  
-  if(sum(.xyz[,3])==0) {
-    return(c())
+
+  if (sum(.xyz[, 3]) == 0)
+    return(character(0))
+
+  if (shifted) {
+    odds <- seq(1, max(.xyz[ , "array_col"]), by = 2)
+    .xyz[.xyz[ , "array_col"] %in% odds, "array_col"] <-
+      .xyz[.xyz[ , "array_col"] %in% odds, "array_col"] - 1
   }
 
-  if(shifted==TRUE) {
-    odds = seq(1,max(.xyz[,"array_col"]), by=2)
-    .xyz[.xyz[,"array_col"] %in% odds, "array_col"] = 
-      .xyz[.xyz[,"array_col"] %in% odds, "array_col"]-1
-  }
-  
-  t1 = raster::rasterFromXYZ(.xyz)
-  # ENHANCED: Pass min_cluster_size to focal_transformations
+  t1 <- raster::rasterFromXYZ(.xyz)
   t2 <- focal_transformations(t1, min_cluster_size = min_cluster_size)
-  rast = as.matrix(t2)
-  c1 = raster::clump(t2, directions=8)
-  
-  clumps = as.matrix(c1)
-  edgeClumps = c()
-  
-  # ENHANCED: Use parameterized edge_threshold instead of hard-coded 0.75
-  north = sum(!is.na(clumps[1,]))/sum(!is.na(rast[1,]))
-  if(north>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[1,]))
-  
-  east = sum(!is.na(clumps[,ncol(clumps)]))/sum(!is.na(rast[,ncol(rast)]))
-  if(east>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,ncol(clumps)]))
-  
-  south = sum(!is.na(clumps[nrow(clumps),]))/sum(!is.na(rast[nrow(rast),]))
-  if(south>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[nrow(clumps),]))
-  
-  west = sum(!is.na(clumps[,1]))/sum(!is.na(rast[,1]))
-  if(west>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,1]))
-  
-  edgeClumps = edgeClumps[!is.na(edgeClumps)]
-  if(length(edgeClumps)==0) {
-    return(c())
-  }
-  
-  res <- vector("list", length(edgeClumps))
-  names(res) <- as.character(edgeClumps)
-  for (i in edgeClumps){
-    res[[as.character(i)]] <- as.data.frame(which(clumps == i, arr.ind = TRUE))
-  }
-  res.df = do.call(rbind, res) 
-  edgeSpots = lookupKey(.xyz[,1:2], res.df)
-  result <- setdiff(edgeSpots, offTissue)
-  
-  return(result)
+
+  nrows <- nrow(t2)
+  ncols <- ncol(t2)
+
+  rast <- matrix(raster::getValues(t2), nrow = nrows, ncol = ncols, byrow = TRUE)
+
+  c1      <- raster::clump(t2, directions = 8)
+  clumps  <- matrix(raster::getValues(c1), nrow = nrows, ncol = ncols, byrow = TRUE)
+
+  edgeClumps <- c()
+
+  north <- sum(!is.na(clumps[1, ]))            / sum(!is.na(rast[1, ]))
+  if (north >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[1, ]))
+
+  east  <- sum(!is.na(clumps[ , ncols]))       / sum(!is.na(rast[ , ncols]))
+  if (east  >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[ , ncols]))
+
+  south <- sum(!is.na(clumps[nrows, ]))        / sum(!is.na(rast[nrows, ]))
+  if (south >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[nrows, ]))
+
+  west  <- sum(!is.na(clumps[ , 1]))           / sum(!is.na(rast[ , 1]))
+  if (west  >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[ , 1]))
+
+  edgeClumps <- edgeClumps[!is.na(edgeClumps)]
+  if (length(edgeClumps) == 0)
+    return(character(0))
+  res_list <- lapply(edgeClumps, function(i) {
+    as.data.frame(which(clumps == i, arr.ind = TRUE))
+  })
+  names(res_list) <- as.character(edgeClumps)
+
+  res_df <- do.call(rbind, res_list)
+  edgeSpots <- lookupKey(.xyz[ , 1:2], res_df)
+  setdiff(edgeSpots, offTissue)
 }
 
 #' Enhanced problem areas detection with parameterized cluster size
