@@ -1,8 +1,7 @@
 Package: SpatialDryArtifacts
 Title: Edge Dryspot Detection for Spatial Transcriptomics
 Version: 0.0.0.9000
-Authors@R: 
-    Authors@R: c(
+Authors@R: c(
     person("Jiali", "He", email = "jhe46@jh.edu", role = c("aut", "cre")),
     person("Stephanie", "Hicks", role = "ths"),
     person("Michael", "Totty", role = "ctb"),
