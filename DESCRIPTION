@@ -1,9 +1,16 @@
 Package: SpatialDryArtifacts
-Title: What the Package Does (One Line, Title Case)
+Title: Edge Dryspot Detection for Spatial Transcriptomics
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    Authors@R: c(
+    person("Jiali", "He", email = "jhe46@jh.edu", role = c("aut", "cre")),
+    person("Stephanie", "Hicks", role = "ths"),
+    person("Michael", "Totty", role = "ctb"),
+    person("Jacqui", "Benefiel", role = "ctb"))
+Description: Implements enhanced methods for detecting edge dryspots and technical 
+    artifacts in spatial transcriptomics data. Provides spatially-aware quality 
+    control algorithms for Visium and other spatial platforms, extending the 
+    SpotSweeper framework with raster-based edge detection capabilities.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
