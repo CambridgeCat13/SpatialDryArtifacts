@@ -67,7 +67,21 @@
 </h1></div>
 <!-- badges: start -->
 <!-- badges: end -->
-<p>The goal of SpatialDryArtifacts is to …</p>
+<div class="section level2">
+<h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
+</h2>
+<p>SpatialDryArtifacts implements enhanced methods for detecting edge dryspots - technical artifacts caused by incomplete reagent coverage during Visium spatial transcriptomics sample preparation. This package extends existing spatial transcriptomics quality control methods by incorporating spatial neighborhood information.</p>
+</div>
+<div class="section level2">
+<h2 id="key-features">Key Features<a class="anchor" aria-label="anchor" href="#key-features"></a>
+</h2>
+<ul>
+<li>Detection of edge dryspots using raster-based focal transformations</li>
+<li>Classification of problem areas into removal categories</li>
+<li>Integration with existing Bioconductor workflows</li>
+<li>Compatibility with SpatialExperiment objects</li>
+</ul>
+</div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
@@ -82,7 +96,12 @@
 <p>This is a basic example which shows you how to solve a common problem:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/CambridgeCat13/SpatialDryArtifacts" class="external-link">SpatialDryArtifacts</a></span><span class="op">)</span></span>
-<span><span class="co">## basic example code</span></span></code></pre></div>
+<span></span>
+<span><span class="co"># Detect edge dryspots</span></span>
+<span><span class="va">spe</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/detectEdgeDryspots.html">detectEdgeDryspots</a></span><span class="op">(</span><span class="va">spe</span>, qc_metric <span class="op">=</span> <span class="st">"sum_gene"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Classify results  </span></span>
+<span><span class="va">spe</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/classifyEdgeDryspots.html">classifyEdgeDryspots</a></span><span class="op">(</span><span class="va">spe</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
   </div>
