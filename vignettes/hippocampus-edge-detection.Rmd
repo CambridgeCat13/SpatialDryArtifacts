@@ -17,6 +17,7 @@ knitr::opts_chunk$set(
 ```{r setup}
 pkgload::load_all("..", export_all = TRUE)
 knitr::opts_chunk$set(cache = FALSE)
+source("../R/edge_helper_functions.R")
 library(SpatialDryArtifacts)
 library(ExperimentHub)
 library(ggplot2)
@@ -46,6 +47,7 @@ Edge Dryspot Detection
 We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
 
 ```{r detectingSpot, cache=FALSE}
+source("../R/edge_helper_functions.R")
 # Apply edge dryspot detection to all samples
 spe_detected <- detectEdgeDryspots(
   spatial_hpc_spe,

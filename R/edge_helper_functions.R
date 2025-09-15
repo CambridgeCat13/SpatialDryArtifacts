@@ -1,6 +1,6 @@
 # ==============================================================================
 # Enhanced Edge Detection Helper Functions
-# Phase 1: Parameterized version of Jacqui's functions
+# Phase 1: Parameterized version of Jacqui's functions WITH COORDINATE FIX
 # ==============================================================================
 
 my_fill <- function(x) {
@@ -33,62 +33,121 @@ my_outline <- function(x) {
 #' @param min_cluster_size Minimum cluster size threshold (default: 40)
 #' @return Processed raster object
 focal_transformations <- function(raster_object, min_cluster_size = 40) {
-  r2 <- raster::focal(raster_object, w=matrix(1,3,3), fun=my_fill, pad=T, padValue=1)
-  r3 <- raster::focal(r2, w=matrix(1,5,5), fun=my_outline, pad=T, padValue=1)
+  r2 <- raster::focal(raster_object, w=matrix(1,3,3), fun=my_fill, pad=TRUE, padValue=1)
+  r3 <- raster::focal(r2, w=matrix(1,5,5), fun=my_outline, pad=TRUE, padValue=1)
   
   star.m = matrix(rep(c(0,1), length.out=9), 3, 3)
   star.m[5] = 1
-  r3_s <- raster::focal(r3, star.m, fun=my_fill_star, pad=T, padValue=1)
+  r3_s <- raster::focal(r3, star.m, fun=my_fill_star, pad=TRUE, padValue=1)
   
   rev_r3 = r3_s
   rev_r3[r3_s==0] = 1
   rev_r3[r3_s==1] = 0
   rev_c3 = raster::clump(rev_r3)
   
-  tbl = table(as.matrix(rev_c3))
-  # FIXED: Now uses parameter instead of hard-coded 40
+  # FIXED: Use raster::values() instead of as.matrix()
+  rev_c3_values <- raster::values(rev_c3)
+  tbl = table(rev_c3_values, useNA = "no")
+  
   flip_clump = as.numeric(names(tbl)[tbl < min_cluster_size])
   r4 = r3_s
-  r4[rev_c3 %in% flip_clump] = 1
+  
+  if (length(flip_clump) > 0) {
+    r4_values <- raster::values(r4)
+    r4_values[rev_c3_values %in% flip_clump] <- 1
+    raster::values(r4) <- r4_values
+  }
   
   return(r4)
 }
-
+# FIXED: Coordinate-aware lookup using cell-based approach
 lookupKey <- function(.xy, results_df) {
+  if (nrow(results_df) == 0) {
+    return(character(0))
+  }
+  
+  # This function now expects .xy to be the ORIGINAL coordinates (row, col)
+  # and results_df to be matrix indices from which(arr.ind = TRUE)
+  # We need to map matrix indices back to original coordinates
+  
   result_spots <- c()
   
+  # Get unique coordinates for mapping
+  unique_rows <- sort(unique(.xy[,1]))  # Original array_row values
+  unique_cols <- sort(unique(.xy[,2]))  # Original array_col values
+  
   for(i in 1:nrow(results_df)) {
-    target_row <- results_df[i,1]
-    target_col <- results_df[i,2]
-    match_idx <- which(.xy[,1] == target_row & .xy[,2] == target_col)
-    if(length(match_idx) > 0) {
-      result_spots <- c(result_spots, rownames(.xy)[match_idx])
+    mat_row <- results_df[i,1]  # Matrix row index
+    mat_col <- results_df[i,2]  # Matrix col index
+    
+    # Convert matrix indices back to original coordinate space
+    # Remember: raster was created with swapped coordinates
+    if (mat_col <= length(unique_rows) && mat_row <= length(unique_cols)) {
+      # Matrix cols correspond to original rows (because we swapped them)
+      # Matrix rows correspond to original cols (because we swapped them)
+      # And matrix rows are flipped vertically
+      orig_row_coord <- unique_rows[mat_col]
+      orig_col_coord <- unique_cols[length(unique_cols) - mat_row + 1]
+      
+      # Find matching spot in original coordinates
+      match_idx <- which(abs(.xy[,1] - orig_row_coord) < 0.1 & 
+                         abs(.xy[,2] - orig_col_coord) < 0.1)
+      if(length(match_idx) > 0) {
+        result_spots <- c(result_spots, rownames(.xy)[match_idx])
+      }
     }
   }
   
-  return(result_spots)
+  return(unique(result_spots))
 }
 
+# FIXED: Coordinate-aware lookup for data frames
 lookupKeyDF <- function(.xy, results_df) {
+  if (nrow(results_df) == 0) {
+    return(data.frame(spotcode = character(0), 
+                     clumpID = character(0), 
+                     clumpSize = numeric(0)))
+  }
+  
   result_list <- list()
   
+  # Get unique coordinates for mapping
+  unique_rows <- sort(unique(.xy[,1]))  # Original array_row values
+  unique_cols <- sort(unique(.xy[,2]))  # Original array_col values
+  
   for(i in 1:nrow(results_df)) {
-    target_row <- results_df[i,1]
-    target_col <- results_df[i,2]
+    mat_row <- results_df[i,1]  # Matrix row index
+    mat_col <- results_df[i,2]  # Matrix col index
     
-    match_idx <- which(.xy[,1] == target_row & .xy[,2] == target_col)
-    if(length(match_idx) > 0) {
-      result_list[[i]] <- data.frame(
-        spotcode = rownames(.xy)[match_idx],
-        clumpID = results_df[i,3],
-        clumpSize = results_df[i,4]
-      )
+    # Convert matrix indices back to original coordinate space
+    if (mat_col <= length(unique_rows) && mat_row <= length(unique_cols)) {
+      orig_row_coord <- unique_rows[mat_col]
+      orig_col_coord <- unique_cols[length(unique_cols) - mat_row + 1]
+      
+      # Find matching spot in original coordinates
+      match_idx <- which(abs(.xy[,1] - orig_row_coord) < 0.1 & 
+                         abs(.xy[,2] - orig_col_coord) < 0.1)
+      if(length(match_idx) > 0) {
+        result_list[[i]] <- data.frame(
+          spotcode = rownames(.xy)[match_idx],
+          clumpID = results_df[i,3],
+          clumpSize = results_df[i,4],
+          stringsAsFactors = FALSE
+        )
+      }
     }
   }
+  
+  if (length(result_list) == 0) {
+    return(data.frame(spotcode = character(0), 
+                     clumpID = character(0), 
+                     clumpSize = numeric(0)))
+  }
+  
   return(do.call(rbind, result_list))
 }
 
-#' Enhanced clump edges detection with parameterized thresholds
+#' Enhanced clump edges detection with parameterized thresholds AND COORDINATE FIX
 #' 
 #' @param .xyz Coordinate matrix with QC data
 #' @param offTissue Vector of off-tissue spot names
@@ -111,27 +170,33 @@ clumpEdges <- function(.xyz, offTissue, shifted=FALSE, edge_threshold=0.6, min_c
       .xyz[.xyz[,"array_col"] %in% odds, "array_col"]-1
   }
   
-  t1 = raster::rasterFromXYZ(.xyz)
-  # ENHANCED: Pass min_cluster_size to focal_transformations
+  xyz_corrected <- .xyz
+  xyz_corrected[, c(1, 2)] <- .xyz[, c(2, 1)]
+  
+  t1 = raster::rasterFromXYZ(xyz_corrected)
   t2 <- focal_transformations(t1, min_cluster_size = min_cluster_size)
-  rast = as.matrix(t2)
+  rast_values = raster::values(t2)
+  rast_dims = c(nrow(t2), ncol(t2))
+  rast = matrix(rast_values, nrow = rast_dims[1], ncol = rast_dims[2])
   c1 = raster::clump(t2, directions=8)
   
-  clumps = as.matrix(c1)
+  clump_values = raster::values(c1)
+  clump_dims = c(nrow(c1), ncol(c1))
+  clumps = matrix(clump_values, nrow = clump_dims[1], ncol = clump_dims[2])
   edgeClumps = c()
   
-  # ENHANCED: Use parameterized edge_threshold instead of hard-coded 0.75
+  # FIXED: Add NA checks for edge calculations
   north = sum(!is.na(clumps[1,]))/sum(!is.na(rast[1,]))
-  if(north>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[1,]))
+  if(!is.na(north) && north>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[1,]))
   
   east = sum(!is.na(clumps[,ncol(clumps)]))/sum(!is.na(rast[,ncol(rast)]))
-  if(east>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,ncol(clumps)]))
+  if(!is.na(east) && east>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,ncol(clumps)]))
   
   south = sum(!is.na(clumps[nrow(clumps),]))/sum(!is.na(rast[nrow(rast),]))
-  if(south>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[nrow(clumps),]))
+  if(!is.na(south) && south>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[nrow(clumps),]))
   
   west = sum(!is.na(clumps[,1]))/sum(!is.na(rast[,1]))
-  if(west>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,1]))
+  if(!is.na(west) && west>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,1]))
   
   edgeClumps = edgeClumps[!is.na(edgeClumps)]
   if(length(edgeClumps)==0) {
@@ -144,13 +209,14 @@ clumpEdges <- function(.xyz, offTissue, shifted=FALSE, edge_threshold=0.6, min_c
     res[[as.character(i)]] <- as.data.frame(which(clumps == i, arr.ind = TRUE))
   }
   res.df = do.call(rbind, res) 
+  
   edgeSpots = lookupKey(.xyz[,1:2], res.df)
   result <- setdiff(edgeSpots, offTissue)
   
   return(result)
 }
 
-#' Enhanced problem areas detection with parameterized cluster size
+#' Enhanced problem areas detection with parameterized cluster size AND COORDINATE FIX
 #' 
 #' @param .xyz Coordinate matrix with QC data
 #' @param offTissue Vector of off-tissue spot names
@@ -173,13 +239,21 @@ problemAreas <- function(.xyz, offTissue, uniqueIdentifier=NA, shifted=FALSE, mi
       .xyz[.xyz[,"array_col"] %in% odds, "array_col"]-1
   }
   
-  t1 = raster::rasterFromXYZ(.xyz)
+  # CRITICAL FIX: Swap coordinates for rasterFromXYZ
+  xyz_corrected <- .xyz
+  xyz_corrected[, c(1, 2)] <- .xyz[, c(2, 1)]  # Swap row and col
+  
+  t1 = raster::rasterFromXYZ(xyz_corrected)
   # ENHANCED: Pass min_cluster_size to focal_transformations
   t2 = focal_transformations(t1, min_cluster_size = min_cluster_size)
-  rast = as.matrix(t2)
+  rast_values = raster::values(t2)
+  rast_dims = c(nrow(t2), ncol(t2))
+  rast = matrix(rast_values, nrow = rast_dims[1], ncol = rast_dims[2])
   c1 = raster::clump(t2, directions=8)
   
-  clumps = as.matrix(c1)
+  clump_values = raster::values(c1)
+  clump_dims = c(nrow(c1), ncol(c1))
+  clumps = matrix(clump_values, nrow = clump_dims[1], ncol = clump_dims[2])
   tot <- max(clumps, na.rm=TRUE)
   res <- vector("list",tot)
   if(is.na(uniqueIdentifier)) uniqueIdentifier = "X"
@@ -193,6 +267,8 @@ problemAreas <- function(.xyz, offTissue, uniqueIdentifier=NA, shifted=FALSE, mi
     )
   }
   res.df = do.call(rbind.data.frame, res) 
+  
+  # FIXED: Use coordinate-corrected lookup with original coordinates
   pAreas = lookupKeyDF(.xyz[,1:2], res.df)
   result <- pAreas[!pAreas$spotcode %in% offTissue,]
   

@@ -37,11 +37,11 @@ detectEdgeDryspots <- function(
     qc_metric = "sum_gene",
     samples = "sample_id", 
     mad_threshold = 3,
-    edge_threshold = 0.6,        # ENHANCED: Reduced from 0.75
-    min_cluster_size = 20,       # ENHANCED: Reduced from 40, now parameterized
+    edge_threshold = 0.75,
     shifted = FALSE,
     batch_var = "both",
-    name = "edge_dryspot") {
+    name = "edge_dryspot", 
+    min_cluster_size = 40) {
   
   # Input validation
   if (!inherits(spe, "SpatialExperiment")) {
@@ -61,12 +61,6 @@ detectEdgeDryspots <- function(
   if (!is.numeric(mad_threshold) || mad_threshold <= 0) {
     stop("'mad_threshold' must be a positive numeric value.")
   }
-  if (!is.numeric(edge_threshold) || edge_threshold <= 0 || edge_threshold > 1) {
-    stop("'edge_threshold' must be between 0 and 1.")
-  }
-  if (!is.numeric(min_cluster_size) || min_cluster_size <= 0) {
-    stop("'min_cluster_size' must be a positive numeric value.")
-  }
   
   # Data preparation
   lg10_metric <- paste0("lg10_", qc_metric)
@@ -76,7 +70,7 @@ detectEdgeDryspots <- function(
   if (batch_var %in% c("slide", "both")) {
     if ("slide" %in% colnames(colData(spe))) {
       outlier_slide_col <- paste0(qc_metric, "_3MAD_outlier_slide")
-      colData(spe)[[outlier_slide_col]] <- isOutlier(
+      colData(spe)[[outlier_slide_col]] <- scuttle::isOutlier(
         colData(spe)[[lg10_metric]], 
         subset = colData(spe)$in_tissue, 
         batch = colData(spe)$slide, 
@@ -91,7 +85,7 @@ detectEdgeDryspots <- function(
 
   if (batch_var %in% c("sample_id", "both")) {
     outlier_sample_col <- paste0(qc_metric, "_3MAD_outlier_sample")
-    colData(spe)[[outlier_sample_col]] <- isOutlier(
+    colData(spe)[[outlier_sample_col]] <- scuttle::isOutlier(
       colData(spe)[[lg10_metric]], 
       subset = colData(spe)$in_tissue, 
       batch = colData(spe)[[samples]], 
@@ -121,18 +115,23 @@ detectEdgeDryspots <- function(
   sampleList <- unique(colData(spe)[[samples]])
   names(sampleList) <- sampleList
   
-  # ENHANCED: Edge detection with parameterized thresholds
-  message("Detecting edges with edge_threshold=", edge_threshold, 
-          " and min_cluster_size=", min_cluster_size, "...")
+  # Edge detection
+  message("Detecting edges...")
   genes_edges <- lapply(sampleList, function(x) {
     tmp <- colData(spe)[colData(spe)[[samples]] == x, 
                         c("in_tissue", "array_row", "array_col", 
                           paste0(qc_metric, "_3MAD_outlier_binary"))]
     
-    result <- clumpEdges(tmp[, -1], rownames(tmp)[tmp$in_tissue == FALSE], 
-                        shifted = shifted, 
-                        edge_threshold = edge_threshold,          # ENHANCED: User-controlled
-                        min_cluster_size = min_cluster_size)      # ENHANCED: User-controlled
+    # CRITICAL FIX: Convert DataFrame to regular data.frame for raster operations
+    tmp_df <- as.data.frame(tmp)
+    
+    # Ensure numeric columns are properly typed
+    tmp_df$array_row <- as.numeric(tmp_df$array_row)
+    tmp_df$array_col <- as.numeric(tmp_df$array_col)
+    tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
+    
+    result <- clumpEdges(tmp_df[, -1], rownames(tmp_df)[tmp_df$in_tissue == FALSE], 
+                        shifted = shifted, edge_threshold = edge_threshold, min_cluster_size = min_cluster_size)
     return(result)
   })
   
@@ -150,18 +149,26 @@ detectEdgeDryspots <- function(
     message("Samples with edges detected: ", paste(samples_with_edges, collapse = ", "))
   }
   
-  # ENHANCED: Problem areas detection with parameterized cluster size
+  # Problem areas detection
   message("Finding problem areas...")
   genes_probs <- lapply(sampleList, function(x) {
     tmp <- colData(spe)[colData(spe)[[samples]] == x, 
                         c("in_tissue", "array_row", "array_col", 
                           paste0(qc_metric, "_3MAD_outlier_binary"))]
     
-    result <- problemAreas(tmp[, -1], 
-                          rownames(tmp)[tmp$in_tissue == FALSE], 
+    # CRITICAL FIX: Convert DataFrame to regular data.frame for raster operations
+    tmp_df <- as.data.frame(tmp)
+    
+    # Ensure numeric columns are properly typed
+    tmp_df$array_row <- as.numeric(tmp_df$array_row)
+    tmp_df$array_col <- as.numeric(tmp_df$array_col)
+    tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
+    
+    result <- problemAreas(tmp_df[, -1], 
+                          rownames(tmp_df)[tmp_df$in_tissue == FALSE], 
                           uniqueIdentifier = x, 
                           shifted = shifted,
-                          min_cluster_size = min_cluster_size)    # ENHANCED: User-controlled
+                          min_cluster_size = min_cluster_size)
     return(result)
   })
   
@@ -175,10 +182,7 @@ detectEdgeDryspots <- function(
     colData(spe)[genes_probs$spotcode, paste0(name, "_problem_size")] <- genes_probs$clumpSize
   }
   
-  message("Edge dryspot detection completed with enhanced sensitivity!")
-  message("  - Edge threshold: ", edge_threshold, " (vs. previous 0.75)")
-  message("  - Min cluster size: ", min_cluster_size, " (vs. previous hard-coded 40)")
-  
+  message("Edge dryspot detection completed!")
   return(spe)
 }
 
