@@ -65,14 +65,11 @@ spe_classified <- classifyEdgeDryspots(spe_detected)
 
 Visualization: QC Metrics and Detection Results
 We'll create a comprehensive visualization showing QC metrics and detection results for all samples:
-```{r plot}
-# Get all unique samples
+```{r plot, fig.width=16, fig.height=20}
 all_samples <- unique(spe_classified$sample_id)
 
-# Create plotting function for each sample
 create_sample_plots <- function(sample_id, spe_data) {
   
-  # Extract single sample
   spe_sample <- spe_data[, spe_data$sample_id == sample_id]
   coords <- spatialCoords(spe_sample)
   in_tissue <- spe_sample$in_tissue
@@ -87,32 +84,31 @@ create_sample_plots <- function(sample_id, spe_data) {
     edge_flagged = spe_sample$edge_dryspot_edge[in_tissue]
   )
   
-  # Base theme
   base_theme <- theme_void() + 
     theme(plot.title = element_text(size = 8, hjust = 0.5),
-          legend.position = "none")
+          legend.position = "none",
+          plot.margin = margin(1, 1, 1, 1, "pt"))
   
-  # Create 4 plots per sample
   p1 <- ggplot(plot_data, aes(x = x, y = y, color = log10(sum_umi + 1))) +
-    geom_point(size = 0.3, alpha = 0.7) +
+    geom_point(size = 0.3, alpha = 0.8) +
     scale_color_viridis_c(name = "log10(UMI)") +
     ggtitle(paste(sample_id, "- UMI")) +
     base_theme + coord_fixed()
   
   p2 <- ggplot(plot_data, aes(x = x, y = y, color = log10(sum_gene + 1))) +
-    geom_point(size = 0.3, alpha = 0.7) +
+    geom_point(size = 0.3, alpha = 0.8) +
     scale_color_viridis_c(name = "log10(Gene)", option = "plasma") +
     ggtitle(paste(sample_id, "- Genes")) +
     base_theme + coord_fixed()
   
   p3 <- ggplot(plot_data, aes(x = x, y = y, color = expr_chrM_ratio)) +
-    geom_point(size = 0.3, alpha = 0.7) +
+    geom_point(size = 0.3, alpha = 0.8) +
     scale_color_viridis_c(name = "Mito Ratio", option = "inferno") +
     ggtitle(paste(sample_id, "- Mito")) +
     base_theme + coord_fixed()
   
   p4 <- ggplot(plot_data, aes(x = x, y = y, color = edge_flagged)) +
-    geom_point(size = 0.3, alpha = 0.7) +
+    geom_point(size = 0.3, alpha = 0.8) +
     scale_color_manual(values = c("FALSE" = "lightgray", "TRUE" = "red"), 
                        name = "Edge") +
     ggtitle(paste(sample_id, "- Flagged")) +
@@ -121,17 +117,29 @@ create_sample_plots <- function(sample_id, spe_data) {
   return(list(p1, p2, p3, p4))
 }
 
-# Generate and display plots for each sample (one sample per page/block)
-cat("Generating plots for", length(all_samples), "samples...\n")
+samples_per_page <- 4  # 4 samples per page, each sample has 4 plots = 16 plots per page
+n_pages <- ceiling(length(all_samples) / samples_per_page)
 
-for (sample_id in all_samples) {
-  sample_plots <- create_sample_plots(sample_id, spe_classified)
+for (page in 1:n_pages) {
+  start_idx <- (page - 1) * samples_per_page + 1
+  end_idx <- min(page * samples_per_page, length(all_samples))
   
-  gridExtra::grid.arrange(
-    grobs = sample_plots,
-    ncol = 2,
-    nrow = 2,
-    top = paste("Sample:", sample_id)
+  page_samples <- all_samples[start_idx:end_idx]
+  
+  # Collect all plots for this page
+  all_plots <- list()
+  
+  for (sample_id in page_samples) {
+    sample_plots <- create_sample_plots(sample_id, spe_classified)
+    all_plots <- c(all_plots, sample_plots)
+  }
+  
+  # Arrange all plots in a grid: 4 columns (UMI, Genes, Mito, Flagged) 
+  # and as many rows as there are samples on this page
+  grid.arrange(
+    grobs = all_plots,
+    ncol = 4,  # 4 plots per row (one sample per row)
+    top = paste("Edge Detection Results - Page", page)
   )
 }
 ```
