@@ -44,8 +44,7 @@ focal_transformations <- function(raster_object, min_cluster_size = 40) {
   rev_r3[r3_s==0] = 1
   rev_r3[r3_s==1] = 0
   rev_c3 = raster::clump(rev_r3)
-  
-  # FIXED: Use raster::values() instead of as.matrix()
+
   rev_c3_values <- raster::values(rev_c3)
   tbl = table(rev_c3_values, useNA = "no")
   
@@ -60,19 +59,14 @@ focal_transformations <- function(raster_object, min_cluster_size = 40) {
   
   return(r4)
 }
-# FIXED: Coordinate-aware lookup using cell-based approach
+
 lookupKey <- function(.xy, results_df) {
   if (nrow(results_df) == 0) {
     return(character(0))
   }
   
-  # This function now expects .xy to be the ORIGINAL coordinates (row, col)
-  # and results_df to be matrix indices from which(arr.ind = TRUE)
-  # We need to map matrix indices back to original coordinates
-  
   result_spots <- c()
   
-  # Get unique coordinates for mapping
   unique_rows <- sort(unique(.xy[,1]))  # Original array_row values
   unique_cols <- sort(unique(.xy[,2]))  # Original array_col values
   
@@ -80,16 +74,10 @@ lookupKey <- function(.xy, results_df) {
     mat_row <- results_df[i,1]  # Matrix row index
     mat_col <- results_df[i,2]  # Matrix col index
     
-    # Convert matrix indices back to original coordinate space
-    # Remember: raster was created with swapped coordinates
     if (mat_col <= length(unique_rows) && mat_row <= length(unique_cols)) {
-      # Matrix cols correspond to original rows (because we swapped them)
-      # Matrix rows correspond to original cols (because we swapped them)
-      # And matrix rows are flipped vertically
       orig_row_coord <- unique_rows[mat_col]
       orig_col_coord <- unique_cols[length(unique_cols) - mat_row + 1]
       
-      # Find matching spot in original coordinates
       match_idx <- which(abs(.xy[,1] - orig_row_coord) < 0.1 & 
                          abs(.xy[,2] - orig_col_coord) < 0.1)
       if(length(match_idx) > 0) {
@@ -101,7 +89,7 @@ lookupKey <- function(.xy, results_df) {
   return(unique(result_spots))
 }
 
-# FIXED: Coordinate-aware lookup for data frames
+
 lookupKeyDF <- function(.xy, results_df) {
   if (nrow(results_df) == 0) {
     return(data.frame(spotcode = character(0), 
@@ -110,8 +98,7 @@ lookupKeyDF <- function(.xy, results_df) {
   }
   
   result_list <- list()
-  
-  # Get unique coordinates for mapping
+
   unique_rows <- sort(unique(.xy[,1]))  # Original array_row values
   unique_cols <- sort(unique(.xy[,2]))  # Original array_col values
   
@@ -119,12 +106,10 @@ lookupKeyDF <- function(.xy, results_df) {
     mat_row <- results_df[i,1]  # Matrix row index
     mat_col <- results_df[i,2]  # Matrix col index
     
-    # Convert matrix indices back to original coordinate space
     if (mat_col <= length(unique_rows) && mat_row <= length(unique_cols)) {
       orig_row_coord <- unique_rows[mat_col]
       orig_col_coord <- unique_cols[length(unique_cols) - mat_row + 1]
       
-      # Find matching spot in original coordinates
       match_idx <- which(abs(.xy[,1] - orig_row_coord) < 0.1 & 
                          abs(.xy[,2] - orig_col_coord) < 0.1)
       if(length(match_idx) > 0) {
@@ -185,7 +170,6 @@ clumpEdges <- function(.xyz, offTissue, shifted=FALSE, edge_threshold=0.6, min_c
   clumps = matrix(clump_values, nrow = clump_dims[1], ncol = clump_dims[2])
   edgeClumps = c()
   
-  # FIXED: Add NA checks for edge calculations
   north = sum(!is.na(clumps[1,]))/sum(!is.na(rast[1,]))
   if(!is.na(north) && north>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[1,]))
   
@@ -244,7 +228,6 @@ problemAreas <- function(.xyz, offTissue, uniqueIdentifier=NA, shifted=FALSE, mi
   xyz_corrected[, c(1, 2)] <- .xyz[, c(2, 1)]  # Swap row and col
   
   t1 = raster::rasterFromXYZ(xyz_corrected)
-  # ENHANCED: Pass min_cluster_size to focal_transformations
   t2 = focal_transformations(t1, min_cluster_size = min_cluster_size)
   rast_values = raster::values(t2)
   rast_dims = c(nrow(t2), ncol(t2))
@@ -267,8 +250,6 @@ problemAreas <- function(.xyz, offTissue, uniqueIdentifier=NA, shifted=FALSE, mi
     )
   }
   res.df = do.call(rbind.data.frame, res) 
-  
-  # FIXED: Use coordinate-corrected lookup with original coordinates
   pAreas = lookupKeyDF(.xyz[,1:2], res.df)
   result <- pAreas[!pAreas$spotcode %in% offTissue,]
   
