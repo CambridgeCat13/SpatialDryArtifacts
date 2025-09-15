@@ -62,11 +62,10 @@ detectEdgeDryspots <- function(
     stop("'mad_threshold' must be a positive numeric value.")
   }
   
-  # Data preparation
+  # Data prep
   lg10_metric <- paste0("lg10_", qc_metric)
   colData(spe)[[lg10_metric]] <- log10(colData(spe)[[qc_metric]])
   
-  # Outlier detection by batch variable
   if (batch_var %in% c("slide", "both")) {
     if ("slide" %in% colnames(colData(spe))) {
       outlier_slide_col <- paste0(qc_metric, "_3MAD_outlier_slide")
@@ -122,10 +121,8 @@ detectEdgeDryspots <- function(
                         c("in_tissue", "array_row", "array_col", 
                           paste0(qc_metric, "_3MAD_outlier_binary"))]
     
-    # CRITICAL FIX: Convert DataFrame to regular data.frame for raster operations
     tmp_df <- as.data.frame(tmp)
     
-    # Ensure numeric columns are properly typed
     tmp_df$array_row <- as.numeric(tmp_df$array_row)
     tmp_df$array_col <- as.numeric(tmp_df$array_col)
     tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
@@ -135,7 +132,6 @@ detectEdgeDryspots <- function(
     return(result)
   })
   
-  # Store edge results
   colData(spe)[[paste0(name, "_edge")]] <- FALSE
   edge_spots <- unlist(genes_edges)
   if (length(edge_spots) > 0) {
@@ -156,10 +152,8 @@ detectEdgeDryspots <- function(
                         c("in_tissue", "array_row", "array_col", 
                           paste0(qc_metric, "_3MAD_outlier_binary"))]
     
-    # CRITICAL FIX: Convert DataFrame to regular data.frame for raster operations
     tmp_df <- as.data.frame(tmp)
     
-    # Ensure numeric columns are properly typed
     tmp_df$array_row <- as.numeric(tmp_df$array_row)
     tmp_df$array_col <- as.numeric(tmp_df$array_col)
     tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
@@ -172,7 +166,6 @@ detectEdgeDryspots <- function(
     return(result)
   })
   
-  # Store problem area results
   genes_probs <- do.call(rbind, genes_probs)
   colData(spe)[[paste0(name, "_problem_id")]] <- NA
   colData(spe)[[paste0(name, "_problem_size")]] <- 0
@@ -197,24 +190,18 @@ detectEdgeDryspots <- function(
 
 calculateEdgeZones <- function(spe, samples) {
   edge_zones <- rep("interior", nrow(colData(spe)))
-
-  # Process each sample separately
   sample_list <- unique(colData(spe)[[samples]])
 
   for (sample_id in sample_list) {
     sample_spots <- which(colData(spe)[[samples]] == sample_id & colData(spe)$in_tissue)
 
     if (length(sample_spots) > 0) {
-      # Get coordinates for this sample
       coords <- spatialCoords(spe)[sample_spots, ]
 
-      # Calculate distance from boundary for each spot
-      # Simple approach: distance from min/max coordinates
       x_dist_from_edge <- pmin(coords[,1] - min(coords[,1]), max(coords[,1]) - coords[,1])
       y_dist_from_edge <- pmin(coords[,2] - min(coords[,2]), max(coords[,2]) - coords[,2])
       dist_from_edge <- pmin(x_dist_from_edge, y_dist_from_edge)
 
-      # Classify by percentiles
       percentiles <- quantile(dist_from_edge, c(0.33, 0.66))
 
       edge_zones[sample_spots[dist_from_edge <= percentiles[1]]] <- "1"
@@ -236,8 +223,6 @@ calculateEdgeZones <- function(spe, samples) {
 
 calculateSamplePosition <- function(spe, samples) {
   sample_positions <- rep("interior", nrow(colData(spe)))
-
-  # Process each sample separately
   sample_list <- unique(colData(spe)[[samples]])
 
   for (sample_id in sample_list) {
@@ -245,17 +230,12 @@ calculateSamplePosition <- function(spe, samples) {
 
     if (length(sample_spots) > 0) {
       coords <- spatialCoords(spe)[sample_spots, ]
-
-      # Check if sample touches array boundaries
-      # Assuming standard Visium array coordinates
       touches_left <- min(coords[,1]) <= 1  # Close to minimum array position
       touches_right <- max(coords[,1]) >= 77  # Close to maximum array position
       touches_top <- min(coords[,2]) <= 1
       touches_bottom <- max(coords[,2]) >= 127
 
       open_sides <- sum(c(touches_left, touches_right, touches_top, touches_bottom))
-
-      # Classify entire sample based on boundary contact
       if (open_sides >= 2) {
         sample_positions[sample_spots] <- "corner"
       } else if (open_sides == 1) {
@@ -311,7 +291,6 @@ classifyEdgeDryspots <- function(
     name = "edge_dryspot",
     exclude_slides = NULL) {
 
-  # Input validation
   if (!inherits(spe, "SpatialExperiment")) {
     stop("Input data must be a SpatialExperiment or inherit from SpatialExperiment.")
   }
@@ -324,8 +303,7 @@ classifyEdgeDryspots <- function(
   }
   
   message("Classifying edge dryspots with enhanced categories...")
-  
-  # Process edge classification
+
   colData(spe)[[paste0(name, "_true_edges")]] <- colData(spe)[[paste0(name, "_edge")]]
   
   # Exclude specified slides if provided
@@ -377,12 +355,10 @@ classifyEdgeDryspots <- function(
   # BACKWARD COMPATIBLE CLASSIFICATIONS
   # ============================================================================
   
-  # Create binary classification
   colData(spe)[[paste0(name, "_binary")]] <- 
     ifelse(!is.na(colData(spe)[[paste0(name, "_problem_id")]]), "problem area", "none")
   colData(spe)[colData(spe)[[paste0(name, "_edge")]], paste0(name, "_binary")] <- "edge"
 
-  # Create detailed classification
   problem_sizes <- colData(spe)[[paste0(name, "_problem_size")]]
   colData(spe)[[paste0(name, "_classification")]] <- 
     ifelse(problem_sizes <= min_spots, "small", "flag")
@@ -390,13 +366,11 @@ classifyEdgeDryspots <- function(
     ifelse(problem_sizes == 0, "none", 
            colData(spe)[[paste0(name, "_classification")]])
 
-  # Mark areas for removal
   if (length(remove.areas) > 0) {
     colData(spe)[colData(spe)[[paste0(name, "_problem_id")]] %in% remove.areas, 
                  paste0(name, "_classification")] <- "remove"
   }
 
-  # Mark edges
   colData(spe)[colData(spe)[[paste0(name, "_true_edges")]], 
                paste0(name, "_classification")] <- "edge"
   
@@ -404,7 +378,6 @@ classifyEdgeDryspots <- function(
   # ENHANCED CLASSIFICATIONS
   # ============================================================================
   
-  # Initialize enhanced classification
   colData(spe)[[paste0(name, "_enhanced")]] <- "none"
  
   colData(spe)[[paste0(name, "_edge_zone")]] <- calculateEdgeZones(spe, samples)
