@@ -33,63 +33,59 @@ my_outline <- function(x) {
 #' @param min_cluster_size Minimum cluster size threshold (default: 40)
 #' @return Processed raster object
 focal_transformations <- function(raster_object, min_cluster_size = 40) {
-
-  r2   <- raster::focal(raster_object, w = matrix(1, 3, 3), fun = my_fill,    pad = TRUE, padValue = 1)
-  r3   <- raster::focal(r2,              w = matrix(1, 5, 5), fun = my_outline, pad = TRUE, padValue = 1)
-
-  star.m      <- matrix(rep(c(0, 1), length.out = 9), 3, 3)
-  star.m[5]   <- 1
-  r3_s        <- raster::focal(r3, star.m, fun = my_fill_star, pad = TRUE, padValue = 1)
-
-  rev_r3      <- r3_s
-  rev_r3[r3_s == 0] <- 1
-  rev_r3[r3_s == 1] <- 0
-
-  rev_c3 <- raster::clump(rev_r3)
+  r2 <- raster::focal(raster_object, w=matrix(1,3,3), fun=my_fill, pad=T, padValue=1)
+  r3 <- raster::focal(r2, w=matrix(1,5,5), fun=my_outline, pad=T, padValue=1)
   
-  message("[patched focal_transformations] using getValues()")
-
-  #avoid as.matrix()/array() which cause dimname to produce error
-  vals <- raster::getValues(rev_c3)
-  tbl  <- table(vals, useNA = "no")
-
-  flip_clump <- as.numeric(names(tbl)[tbl < min_cluster_size])
-
-  r4 <- r3_s
-  # 用 cell 索引替换小簇，保持 rev_c3 为 RasterLayer
-  idx <- which(!is.na(vals) & vals %in% flip_clump)
-  r4[idx] <- 1
-
+  star.m = matrix(rep(c(0,1), length.out=9), 3, 3)
+  star.m[5] = 1
+  r3_s <- raster::focal(r3, star.m, fun=my_fill_star, pad=T, padValue=1)
+  
+  rev_r3 = r3_s
+  rev_r3[r3_s==0] = 1
+  rev_r3[r3_s==1] = 0
+  rev_c3 = raster::clump(rev_r3)
+  
+  tbl = table(as.matrix(rev_c3))
+  # FIXED: Now uses parameter instead of hard-coded 40
+  flip_clump = as.numeric(names(tbl)[tbl < min_cluster_size])
+  r4 = r3_s
+  r4[rev_c3 %in% flip_clump] = 1
+  
   return(r4)
 }
 
 lookupKey <- function(.xy, results_df) {
-  key1 = cbind(.xy, "numeric_key"=seq(nrow(.xy)))
-  t1 = raster::rasterFromXYZ(key1)
-  rast = as.matrix(t1)
+  result_spots <- c()
   
-  num_key = sapply(1:nrow(results_df), function(x) {
-    v1 = as.numeric(results_df[x,])
-    rast[v1[1],v1[2]]
-  })
-  edge_spots = rownames(key1)[key1$numeric_key %in% num_key] 
+  for(i in 1:nrow(results_df)) {
+    target_row <- results_df[i,1]
+    target_col <- results_df[i,2]
+    match_idx <- which(.xy[,1] == target_row & .xy[,2] == target_col)
+    if(length(match_idx) > 0) {
+      result_spots <- c(result_spots, rownames(.xy)[match_idx])
+    }
+  }
   
-  return(edge_spots)
+  return(result_spots)
 }
 
 lookupKeyDF <- function(.xy, results_df) {
-  key1 = cbind(.xy, "numeric_key"=seq(nrow(.xy)))
-  t1 = raster::rasterFromXYZ(key1)
-  rast = as.matrix(t1)
+  result_list <- list()
   
-  num_key = do.call(rbind, lapply(1:nrow(results_df), function(x) 
-    cbind.data.frame("numeric_key"=rast[results_df[x,1],results_df[x,2]], "clump_id"=results_df[x,3], "size"=results_df[x,4])
-  ))
-  
-  matching = match(num_key$numeric_key, key1$numeric_key)
-  result <- cbind.data.frame("spotcode"=rownames(key1)[matching],"clumpID"=num_key$clump_id, "clumpSize"=num_key$size)
-  
-  return(result)
+  for(i in 1:nrow(results_df)) {
+    target_row <- results_df[i,1]
+    target_col <- results_df[i,2]
+    
+    match_idx <- which(.xy[,1] == target_row & .xy[,2] == target_col)
+    if(length(match_idx) > 0) {
+      result_list[[i]] <- data.frame(
+        spotcode = rownames(.xy)[match_idx],
+        clumpID = results_df[i,3],
+        clumpSize = results_df[i,4]
+      )
+    }
+  }
+  return(do.call(rbind, result_list))
 }
 
 #' Enhanced clump edges detection with parameterized thresholds
@@ -100,60 +96,58 @@ lookupKeyDF <- function(.xy, results_df) {
 #' @param edge_threshold Edge coverage threshold (default: 0.6, was 0.75)
 #' @param min_cluster_size Minimum cluster size for morphological cleaning (default: 40)
 #' @return Vector of edge spot names
-clumpEdges <- function(.xyz,
-                       offTissue,
-                       shifted = FALSE,
-                       edge_threshold = 0.6,
-                       min_cluster_size = 40) {
-
-  if (ncol(.xyz) >= 3)
+clumpEdges <- function(.xyz, offTissue, shifted=FALSE, edge_threshold=0.6, min_cluster_size=40) {
+  if(ncol(.xyz) >= 3) {
     .xyz[, 3][is.na(.xyz[, 3])] <- FALSE
-
-  if (sum(.xyz[, 3]) == 0)
-    return(character(0))
-
-  if (shifted) {
-    odds <- seq(1, max(.xyz[ , "array_col"]), by = 2)
-    .xyz[.xyz[ , "array_col"] %in% odds, "array_col"] <-
-      .xyz[.xyz[ , "array_col"] %in% odds, "array_col"] - 1
+  }
+  
+  if(sum(.xyz[,3])==0) {
+    return(c())
   }
 
-  t1 <- raster::rasterFromXYZ(.xyz)
+  if(shifted==TRUE) {
+    odds = seq(1,max(.xyz[,"array_col"]), by=2)
+    .xyz[.xyz[,"array_col"] %in% odds, "array_col"] = 
+      .xyz[.xyz[,"array_col"] %in% odds, "array_col"]-1
+  }
+  
+  t1 = raster::rasterFromXYZ(.xyz)
+  # ENHANCED: Pass min_cluster_size to focal_transformations
   t2 <- focal_transformations(t1, min_cluster_size = min_cluster_size)
-
-  nrows <- nrow(t2)
-  ncols <- ncol(t2)
-
-  rast <- matrix(raster::getValues(t2), nrow = nrows, ncol = ncols, byrow = TRUE)
-
-  c1      <- raster::clump(t2, directions = 8)
-  clumps  <- matrix(raster::getValues(c1), nrow = nrows, ncol = ncols, byrow = TRUE)
-
-  edgeClumps <- c()
-
-  north <- sum(!is.na(clumps[1, ]))            / sum(!is.na(rast[1, ]))
-  if (north >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[1, ]))
-
-  east  <- sum(!is.na(clumps[ , ncols]))       / sum(!is.na(rast[ , ncols]))
-  if (east  >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[ , ncols]))
-
-  south <- sum(!is.na(clumps[nrows, ]))        / sum(!is.na(rast[nrows, ]))
-  if (south >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[nrows, ]))
-
-  west  <- sum(!is.na(clumps[ , 1]))           / sum(!is.na(rast[ , 1]))
-  if (west  >= edge_threshold) edgeClumps <- c(edgeClumps, unique(clumps[ , 1]))
-
-  edgeClumps <- edgeClumps[!is.na(edgeClumps)]
-  if (length(edgeClumps) == 0)
-    return(character(0))
-  res_list <- lapply(edgeClumps, function(i) {
-    as.data.frame(which(clumps == i, arr.ind = TRUE))
-  })
-  names(res_list) <- as.character(edgeClumps)
-
-  res_df <- do.call(rbind, res_list)
-  edgeSpots <- lookupKey(.xyz[ , 1:2], res_df)
-  setdiff(edgeSpots, offTissue)
+  rast = as.matrix(t2)
+  c1 = raster::clump(t2, directions=8)
+  
+  clumps = as.matrix(c1)
+  edgeClumps = c()
+  
+  # ENHANCED: Use parameterized edge_threshold instead of hard-coded 0.75
+  north = sum(!is.na(clumps[1,]))/sum(!is.na(rast[1,]))
+  if(north>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[1,]))
+  
+  east = sum(!is.na(clumps[,ncol(clumps)]))/sum(!is.na(rast[,ncol(rast)]))
+  if(east>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,ncol(clumps)]))
+  
+  south = sum(!is.na(clumps[nrow(clumps),]))/sum(!is.na(rast[nrow(rast),]))
+  if(south>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[nrow(clumps),]))
+  
+  west = sum(!is.na(clumps[,1]))/sum(!is.na(rast[,1]))
+  if(west>=edge_threshold) edgeClumps = c(edgeClumps, unique(clumps[,1]))
+  
+  edgeClumps = edgeClumps[!is.na(edgeClumps)]
+  if(length(edgeClumps)==0) {
+    return(c())
+  }
+  
+  res <- vector("list", length(edgeClumps))
+  names(res) <- as.character(edgeClumps)
+  for (i in edgeClumps){
+    res[[as.character(i)]] <- as.data.frame(which(clumps == i, arr.ind = TRUE))
+  }
+  res.df = do.call(rbind, res) 
+  edgeSpots = lookupKey(.xyz[,1:2], res.df)
+  result <- setdiff(edgeSpots, offTissue)
+  
+  return(result)
 }
 
 #' Enhanced problem areas detection with parameterized cluster size

@@ -46,12 +46,6 @@ Edge Dryspot Detection
 We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
 
 ```{r detectingSpot, cache=FALSE}
-# Clear R session state to prevent cumulative raster errors
-gc()  # Force garbage collection
-if(requireNamespace("raster", quietly = TRUE)) {
-  raster::removeTmpFiles(h=0)  # Clear raster temporary files
-}
-
 # Apply edge dryspot detection to all samples
 spe_detected <- detectEdgeDryspots(
   spatial_hpc_spe,
@@ -125,24 +119,19 @@ create_sample_plots <- function(sample_id, spe_data) {
   return(list(p1, p2, p3, p4))
 }
 
-# Generate plots for all samples
+# Generate and display plots for each sample (one sample per page/block)
 cat("Generating plots for", length(all_samples), "samples...\n")
-all_plots <- list()
 
 for (sample_id in all_samples) {
   sample_plots <- create_sample_plots(sample_id, spe_classified)
-  all_plots <- append(all_plots, sample_plots)
+  
+  gridExtra::grid.arrange(
+    grobs = sample_plots,
+    ncol = 2,
+    nrow = 2,
+    top = paste("Sample:", sample_id)
+  )
 }
-
-# Create combined visualization (36 rows x 4 columns)
-combined_plot <- do.call(gridExtra::grid.arrange, c(
-  all_plots,
-  ncol = 4,  # 4 columns: UMI, Genes, Mito, Flagged
-  nrow = length(all_samples),  # One row per sample
-  top = "Human Hippocampus Edge Dryspot Detection - All Samples"
-))
-
-print(combined_plot)
 ```
 
 Classification Summary
