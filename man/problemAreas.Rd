@@ -2,7 +2,7 @@
 % Please edit documentation in R/edge_helper_functions.R
 \name{problemAreas}
 \alias{problemAreas}
-\title{Enhanced problem areas detection with parameterized cluster size}
+\title{Enhanced problem areas detection with parameterized cluster size AND COORDINATE FIX}
 \usage{
 problemAreas(
   .xyz,
@@ -27,5 +27,5 @@ problemAreas(
 Data frame with problem area information
 }
 \description{
-Enhanced problem areas detection with parameterized cluster size
+Enhanced problem areas detection with parameterized cluster size AND COORDINATE FIX
 }

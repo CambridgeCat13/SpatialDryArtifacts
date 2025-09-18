@@ -23,6 +23,11 @@ Imports:
     SpatialExperiment,
     SummarizedExperiment
 Suggests: 
+    pkgload,
+    igraph,
+    ExperimentHub,
+    ggplot2,
+    gridExtra,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)

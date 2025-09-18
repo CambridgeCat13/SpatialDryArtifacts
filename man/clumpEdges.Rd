@@ -2,7 +2,7 @@
 % Please edit documentation in R/edge_helper_functions.R
 \name{clumpEdges}
 \alias{clumpEdges}
-\title{Enhanced clump edges detection with parameterized thresholds}
+\title{Enhanced clump edges detection with parameterized thresholds AND COORDINATE FIX}
 \usage{
 clumpEdges(
   .xyz,
@@ -27,5 +27,5 @@ clumpEdges(
 Vector of edge spot names
 }
 \description{
-Enhanced clump edges detection with parameterized thresholds
+Enhanced clump edges detection with parameterized thresholds AND COORDINATE FIX
 }
