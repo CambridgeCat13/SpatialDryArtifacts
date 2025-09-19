@@ -42,93 +42,39 @@ detectEdgeDryspots <- function(
     batch_var = "both",
     name = "edge_dryspot", 
     min_cluster_size = 40) {
-  
-  # Input validation
-  if (!inherits(spe, "SpatialExperiment")) {
-    stop("Input data must be a SpatialExperiment or inherit from SpatialExperiment.")
-  }
-  if (!qc_metric %in% colnames(colData(spe))) {
-    stop("qc_metric must be present in colData.")
-  }
-  if (!samples %in% colnames(colData(spe))) {
-    stop("samples column must be present in colData.")
-  }
-  required_cols <- c("in_tissue", "array_row", "array_col")
-  missing_cols <- required_cols[!required_cols %in% colnames(colData(spe))]
-  if (length(missing_cols) > 0) {
-    stop(paste("Missing required columns:", paste(missing_cols, collapse = ", ")))
-  }
-  if (!is.numeric(mad_threshold) || mad_threshold <= 0) {
-    stop("'mad_threshold' must be a positive numeric value.")
-  }
-  
-  # Data prep
+
   lg10_metric <- paste0("lg10_", qc_metric)
   colData(spe)[[lg10_metric]] <- log10(colData(spe)[[qc_metric]])
   
   if (batch_var %in% c("slide", "both")) {
     if ("slide" %in% colnames(colData(spe))) {
       outlier_slide_col <- paste0(qc_metric, "_3MAD_outlier_slide")
-      colData(spe)[[outlier_slide_col]] <- scuttle::isOutlier(
-        colData(spe)[[lg10_metric]], 
-        subset = colData(spe)$in_tissue, 
-        batch = colData(spe)$slide, 
-        type = "lower", 
-        nmads = mad_threshold
-      )
-    } else {
-      warning("'slide' column not found, skipping slide-level outlier detection")
-      colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]] <- FALSE
+      colData(spe)[[outlier_slide_col]] <- as.vector(scuttle::isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)$slide, type = "lower", nmads = mad_threshold))
     }
   }
-
   if (batch_var %in% c("sample_id", "both")) {
     outlier_sample_col <- paste0(qc_metric, "_3MAD_outlier_sample")
-    colData(spe)[[outlier_sample_col]] <- scuttle::isOutlier(
-      colData(spe)[[lg10_metric]], 
-      subset = colData(spe)$in_tissue, 
-      batch = colData(spe)[[samples]], 
-      type = "lower", 
-      nmads = mad_threshold
-    )
+    colData(spe)[[outlier_sample_col]] <- as.vector(scuttle::isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)[[samples]], type = "lower", nmads = mad_threshold))
   }
-  
-  # Combine outlier results
   if (batch_var == "both") {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- 
-      colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]] | 
-      colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
+    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]] | colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
   } else if (batch_var == "slide") {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- 
-      colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]]
+    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]]
   } else {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- 
-      colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
+    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
   }
-  
-  # Exclude off-tissue spots from outlier detection
-  colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- 
-    ifelse(colData(spe)$in_tissue == FALSE, FALSE, 
-           colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]])
+  colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]][!colData(spe)$in_tissue] <- FALSE
   
   sampleList <- unique(colData(spe)[[samples]])
   names(sampleList) <- sampleList
   
-  # Edge detection
   message("Detecting edges...")
   genes_edges <- lapply(sampleList, function(x) {
-    tmp <- colData(spe)[colData(spe)[[samples]] == x, 
-                        c("in_tissue", "array_row", "array_col", 
-                          paste0(qc_metric, "_3MAD_outlier_binary"))]
-    
-    tmp_df <- as.data.frame(tmp)
-    
-    tmp_df$array_row <- as.numeric(tmp_df$array_row)
-    tmp_df$array_col <- as.numeric(tmp_df$array_col)
-    tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
-    
-    result <- clumpEdges(tmp_df[, -1], rownames(tmp_df)[tmp_df$in_tissue == FALSE], 
-                        shifted = shifted, edge_threshold = edge_threshold, min_cluster_size = min_cluster_size)
+    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == x, ]
+    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", paste0(qc_metric, "_3MAD_outlier_binary"))])
+    rownames(xyz_df) <- rownames(tmp_dframe)
+
+    result <- clumpEdges(xyz_df, offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE], shifted = shifted, edge_threshold = edge_threshold, min_cluster_size = min_cluster_size)
     return(result)
   })
   
@@ -138,38 +84,18 @@ detectEdgeDryspots <- function(
     colData(spe)[edge_spots, paste0(name, "_edge")] <- TRUE
   }
   
-  message("Number of samples with edges detected: ", 
-          sum(sapply(genes_edges, length) > 0))
-  samples_with_edges <- names(genes_edges)[sapply(genes_edges, length) > 0]
-  if (length(samples_with_edges) > 0) {
-    message("Samples with edges detected: ", paste(samples_with_edges, collapse = ", "))
-  }
-  
-  # Problem areas detection
   message("Finding problem areas...")
   genes_probs <- lapply(sampleList, function(x) {
-    tmp <- colData(spe)[colData(spe)[[samples]] == x, 
-                        c("in_tissue", "array_row", "array_col", 
-                          paste0(qc_metric, "_3MAD_outlier_binary"))]
-    
-    tmp_df <- as.data.frame(tmp)
-    
-    tmp_df$array_row <- as.numeric(tmp_df$array_row)
-    tmp_df$array_col <- as.numeric(tmp_df$array_col)
-    tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- as.logical(tmp_df[[paste0(qc_metric, "_3MAD_outlier_binary")]])
-    
-    result <- problemAreas(tmp_df[, -1], 
-                          rownames(tmp_df)[tmp_df$in_tissue == FALSE], 
-                          uniqueIdentifier = x, 
-                          shifted = shifted,
-                          min_cluster_size = min_cluster_size)
+    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == x, ]
+    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", paste0(qc_metric, "_3MAD_outlier_binary"))])
+    rownames(xyz_df) <- rownames(tmp_dframe)
+    result <- problemAreas(xyz_df, offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE], uniqueIdentifier = x, shifted = shifted, min_cluster_size = min_cluster_size)
     return(result)
   })
   
   genes_probs <- do.call(rbind, genes_probs)
   colData(spe)[[paste0(name, "_problem_id")]] <- NA
   colData(spe)[[paste0(name, "_problem_size")]] <- 0
-  
   if (nrow(genes_probs) > 0) {
     colData(spe)[genes_probs$spotcode, paste0(name, "_problem_id")] <- genes_probs$clumpID
     colData(spe)[genes_probs$spotcode, paste0(name, "_problem_size")] <- genes_probs$clumpSize

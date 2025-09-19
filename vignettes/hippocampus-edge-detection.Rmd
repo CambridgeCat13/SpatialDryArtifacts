@@ -17,7 +17,6 @@ knitr::opts_chunk$set(
 ```{r setup}
 pkgload::load_all("..", export_all = TRUE)
 knitr::opts_chunk$set(cache = FALSE)
-source("../R/edge_helper_functions.R")
 library(SpatialDryArtifacts)
 library(ExperimentHub)
 library(ggplot2)
@@ -47,7 +46,6 @@ Edge Dryspot Detection
 We'll demonstrate detection using balanced parameters that provide good sensitivity while avoiding over-detection:
 
 ```{r detectingSpot, cache=FALSE}
-source("../R/edge_helper_functions.R")
 # Apply edge dryspot detection to all samples
 spe_detected <- detectEdgeDryspots(
   spatial_hpc_spe,
@@ -221,10 +219,13 @@ cat("Gene difference:", nonflagged_gene - flagged_gene, "\n")
 # Create validation boxplot
 qc_data$flag_status <- ifelse(qc_data$flagged, "Flagged", "Non-Flagged")
 
-validation_plot <- ggplot(qc_data, aes(x = flag_status, y = log10(sum_umi + 1))) +
-  geom_boxplot(fill = c("lightcoral", "lightblue")) +
-  labs(title = "QC Validation: UMI Counts in Flagged vs Non-Flagged Spots",
-       x = "Flag Status", y = "log10(UMI Count)") +
+validation_plot <- ggplot(qc_data, aes(x = flag_status, y = log10(sum_umi + 1), fill = flag_status)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("Flagged" = "lightcoral", "Non-Flagged" = "lightblue")) +
+  labs(
+    title = "QC Validation: UMI Counts in Flagged vs Non-Flagged Spots",
+    x = "Flag Status", y = "log10(UMI Count)"
+  ) +
   theme_minimal()
 
 print(validation_plot)
