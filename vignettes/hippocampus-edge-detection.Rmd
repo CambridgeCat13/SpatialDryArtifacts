@@ -23,8 +23,8 @@ This guide explains the workflow, details the function parameters, interprets th
 The core philosophy is a two-step process: Detect, then Classify. This separates the sensitive task of identifying all potential problem spots from the more nuanced task of deciding what to do with them.
 
 **Step 1: detectEdgeDryspots() — The Detection Phase**
-Goal: To cast a wide net and identify all spots that could potentially be part of an artifact.
-How does it work:
+**Goal**: To cast a wide net and identify all spots that could potentially be part of an artifact.
+**How does it work**:
 Outlier Identification: It first finds individual spots with abnormally low QC metrics (e.g., sum_gene) compared to other spots within the same sample or slide, using a Median Absolute Deviation (MAD) threshold.
 Morphological Cleaning: Using helper functions (focal_transformations), it performs image analysis techniques on the spatial coordinates (array_row, array_col) of these outliers. This intelligently fills small gaps and connects nearby outlier spots into contiguous regions, cleaning up noise.
 Cluster Detection: It identifies all of these contiguous outlier regions as "problem areas" (problemAreas helper function).
