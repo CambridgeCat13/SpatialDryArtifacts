@@ -10,10 +10,12 @@ detectEdgeDryspots(
   samples = "sample_id",
   mad_threshold = 3,
   edge_threshold = 0.75,
+  min_cluster_size = 40,
   shifted = FALSE,
   batch_var = "both",
   name = "edge_dryspot",
-  min_cluster_size = 40
+  verbose = TRUE,
+  keep_intermediate = FALSE
 )
 }
 \arguments{
@@ -27,13 +29,13 @@ detectEdgeDryspots(
 
 \item{edge_threshold}{Numeric threshold for edge detection (default: 0.6, reduced from 0.75)}
 
+\item{min_cluster_size}{Minimum cluster size for morphological cleaning (default: 20, reduced from 40)}
+
 \item{shifted}{Logical indicating whether to apply coordinate adjustment for hexagonal arrays (default: FALSE)}
 
 \item{batch_var}{Character specifying batch variable for outlier detection ("slide", "sample_id", or "both", default: "both")}
 
 \item{name}{Character string for naming output columns (default: "edge_dryspot")}
-
-\item{min_cluster_size}{Minimum cluster size for morphological cleaning (default: 20, reduced from 40)}
 }
 \value{
 A SpatialExperiment object with additional columns in colData:
