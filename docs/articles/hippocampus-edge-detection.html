@@ -88,109 +88,210 @@ Data</h1>
 <div class="section level2">
 <h2 id="introduction">Introduction<a class="anchor" aria-label="anchor" href="#introduction"></a>
 </h2>
-<p>The SpatialDryArtifacts R package provides a robust, two-step
-workflow to identify, classify, and handle edge dryspot artifacts in
-spatial transcriptomics data, particularly from the 10x Visium platform.
+<p>The <strong>SpatialDryArtifacts</strong> R package provides a robust,
+two-step workflow to identify, classify, and handle edge dryspot
+artifacts in spatial transcriptomics data, particularly from the
+<strong>10x Visium</strong> platform.<br>
 These artifacts, often appearing as areas of low gene and UMI counts at
 tissue edges, can negatively impact downstream analyses.</p>
 <p>This guide explains the workflow, details the function parameters,
 interprets the output, and provides a complete practical example.</p>
+<hr>
 <div class="section level3">
 <h3 id="the-spatialdryartifacts-workflow">The SpatialDryArtifacts Workflow<a class="anchor" aria-label="anchor" href="#the-spatialdryartifacts-workflow"></a>
 </h3>
-<p>The core philosophy is a two-step process: Detect, then Classify.
+<p>The core philosophy is a two-step process: <strong>Detect, then
+Classify</strong>.<br>
 This separates the sensitive task of identifying all potential problem
 spots from the more nuanced task of deciding what to do with them.</p>
-<p><strong>Step 1: detectEdgeDryspots() — The Detection Phase</strong>
-Goal: To cast a wide net and identify all spots that could potentially
-be part of an artifact. How does it work: Outlier Identification: It
-first finds individual spots with abnormally low QC metrics (e.g.,
-sum_gene) compared to other spots within the same sample or slide, using
-a Median Absolute Deviation (MAD) threshold. Morphological Cleaning:
-Using helper functions (focal_transformations), it performs image
-analysis techniques on the spatial coordinates (array_row, array_col) of
-these outliers. This intelligently fills small gaps and connects nearby
-outlier spots into contiguous regions, cleaning up noise. Cluster
-Detection: It identifies all of these contiguous outlier regions as
-“problem areas” (problemAreas helper function). Edge Identification: It
-specifically checks which of these problem areas are physically touching
-the outer border of the tissue capture area (clumpEdges helper
-function). Key Outputs: This function adds three “raw” data columns to
-your spe object: _edge, _problem_id, and _problem_size.</p>
-<p><strong>Step 2: classifyEdgeDryspots() — The Decision
-Phase</strong></p>
-<p><strong>Goal</strong>: To take the raw detections from Step 1 and
-apply user-defined rules to assign actionable QC labels. <strong>How
-does it work</strong>: Input: Takes the spe object already processed by
-detectEdgeDryspots(). Rule-Based Classification: It evaluates each
-“problem area” based on parameters you provide, such as the minimum
-cluster size (min_spots) and the proportion of spots within it that have
-very low UMI counts (removal_threshold). Label Assignment: It assigns
-clear, human-readable labels to each spot, like “remove”. Key Outputs:
-This function adds the final classification columns that you will use
-for filtering: _classification and _enhanced.</p>
+<hr>
+<div class="section level4">
+<h4 id="step-1-detectedgedryspots-the-detection-phase">
+<strong>Step 1: <code>detectEdgeDryspots()</code> — The Detection
+Phase</strong><a class="anchor" aria-label="anchor" href="#step-1-detectedgedryspots-the-detection-phase"></a>
+</h4>
+<p><strong>Goal</strong>: Cast a wide net and identify all spots that
+could potentially be part of an artifact.</p>
+<p><strong>How does it work</strong>:</p>
+<ul>
+<li>
+<strong>Outlier Identification</strong>: Finds spots with abnormally
+low QC metrics (e.g., <code>sum_gene</code>) using a Median Absolute
+Deviation (MAD) threshold.<br>
+</li>
+<li>
+<strong>Morphological Cleaning</strong>: With helper functions
+(<code>focal_transformations</code>), performs image-analysis-style
+operations to fill gaps and connect nearby outliers into contiguous
+regions.<br>
+</li>
+<li>
+<strong>Cluster Detection</strong>: Groups these outliers into
+contiguous “problem areas” (<code>problemAreas</code>).<br>
+</li>
+<li>
+<strong>Edge Identification</strong>: Checks which clusters touch
+the tissue border (<code>clumpEdges</code>).<br>
+</li>
+<li>
+<strong>Key Outputs</strong>: Adds three <em>raw</em> columns to
+your <code>spe</code> object: <code>_edge</code>,
+<code>_problem_id</code>, and <code>_problem_size</code>.</li>
+</ul>
+<hr>
+</div>
+<div class="section level4">
+<h4 id="step-2-classifyedgedryspots-the-decision-phase">
+<strong>Step 2: <code>classifyEdgeDryspots()</code> — The Decision
+Phase</strong><a class="anchor" aria-label="anchor" href="#step-2-classifyedgedryspots-the-decision-phase"></a>
+</h4>
+<p><strong>Goal</strong>: Take the raw detections from Step 1 and apply
+user-defined rules to assign actionable QC labels.</p>
+<p><strong>How does it work</strong>:</p>
+<ul>
+<li>
+<strong>Input</strong>: Requires the <code>spe</code> object
+processed by <code><a href="../reference/detectEdgeDryspots.html">detectEdgeDryspots()</a></code>.<br>
+</li>
+<li>
+<strong>Rule-Based Classification</strong>: Evaluates clusters with
+user parameters such as <code>min_spots</code> and
+<code>removal_threshold</code>.<br>
+</li>
+<li>
+<strong>Label Assignment</strong>: Assigns human-readable QC labels
+like <code>"remove"</code>.<br>
+</li>
+<li>
+<strong>Key Outputs</strong>: Adds final classification columns:
+<code>_classification</code> and <code>_enhanced</code>.</li>
+</ul>
+<hr>
+</div>
 </div>
 <div class="section level3">
 <h3 id="parameter-guide">Parameter Guide<a class="anchor" aria-label="anchor" href="#parameter-guide"></a>
 </h3>
-<p>Tuning parameters allows you to adapt the workflow to different
-tissue types and data quality.</p>
-<p><strong>detectEdgeDryspots() Parameters</strong> Core Tuning
-Parameters <em>mad_threshold</em>: (Default: 3) Sets the sensitivity for
-detecting individual outlier spots based on the QC metric. A lower value
-(e.g., 1.5-2) is more sensitive and will flag more spots as initial
-outliers. <em>edge_threshold</em>: (Default: 0.75) The proportion of a
-cluster’s boundary that must be “open” (next to off-tissue spots) to be
-considered an edge cluster. A lower value (e.g., 0.5) is more aggressive
-and will classify more clusters as being on the edge.
-<em>min_cluster_size</em>: (Default: 40) The minimum number of connected
-spots required to be considered a “problem area” by the morphological
-cleaning helpers. A lower value (e.g., 15-20) is more sensitive and will
-detect smaller artifacts.</p>
-<p><strong>Advanced &amp; Data Structure Parameters</strong>
-<em>qc_metric</em>: (Default: “sum_gene”) The column name in
-colData(spe) to be used for outlier detection. Can be changed to
-“sum_umi” or another relevant metric. <em>samples</em>: (Default:
-“sample_id”) The column name that uniquely identifies each sample
-capture area. The function will process each sample independently.
-<em>batch_var</em>: (Default: “both”) Determines the batch for MAD
-outlier calculation. Can be “sample_id”, “slide”, or “both” (calculates
-outliers within each group and combines them). <em>shifted</em>:
-(Default: FALSE) Logical. Set to TRUE if using Visium data where
-odd-numbered columns need a coordinate shift to correctly calculate
-neighbors.</p>
-<p><strong>Utility Parameters</strong> <em>name</em>: (Default:
-“edge_dryspot”) A character string used as the prefix for all output
-columns added to colData(spe). <em>verbose</em>: (Default: TRUE) If
-TRUE, the function will print progress messages to the console.
-<em>keep_intermediate</em>: (Default: FALSE) If TRUE, the intermediate
-MAD outlier columns will be kept in the final spe object.</p>
-<p><strong>classifyEdgeDryspots() Parameters</strong>
-<em>min_spots</em>: (Default: 20) The minimum size for a problem area to
-be considered for the “remove” or “flag” categories. Clusters smaller
-than this are labeled “small”. <em>low_umi_threshold</em>: (Default:
-100) The UMI count (sum_umi) below which a spot is considered “low
-quality” when calculating the removal_threshold.
-<em>removal_threshold</em>: (Default: 0.5) If the proportion of “low
-quality” spots within a problem area exceeds this value, the entire area
-is labeled “remove”. <em>exclude_slides</em>: (Default: NULL) An
-optional character vector of slide IDs. Any edges detected on these
-slides will be ignored during classification, which is useful if you
-know a particular slide’s edge signal is biological. <em>name</em>:
-(Default: “edge_dryspot”) Must match the name used in
-detectEdgeDryspots() to find the correct input columns.</p>
-<p><strong>Understanding the output columns</strong> After running both
-functions, several columns are added to colData(spe). Here are the most
-important ones for QC: *_edge<em>: Raw Detection: Is the spot part of a
-cluster touching the tissue border? (TRUE/FALSE) </em>_problem_id<em>:
-Raw Detection: The ID of the problem area (if any) that this spot
-belongs to. </em>_problem_size<em>: Raw Detection: The size (number of
-spots) of the problem area that this spot belongs to.
-</em>_classification<em>: Final Classification: The action label for
-this spot (“remove”, “flag”, “small”, “keep”). </em>_enhanced<em>: Final
-Classification: A more detailed label that provides context about the
-classification </em>_true_edges*: Intermediate: The _edge status after
-applying the exclude_slides filter.</p>
+<p>Tuning parameters lets you adapt the workflow to different tissue
+types and data quality.</p>
+<hr>
+<div class="section level4">
+<h4 id="detectedgedryspots-parameters">
+<strong><code>detectEdgeDryspots()</code> Parameters</strong><a class="anchor" aria-label="anchor" href="#detectedgedryspots-parameters"></a>
+</h4>
+<p><strong>Core Tuning Parameters</strong></p>
+<ul>
+<li>
+<em><code>mad_threshold</code></em> (Default: 3) – Sensitivity for
+detecting outliers. Lower values (1.5–2) are more sensitive.<br>
+</li>
+<li>
+<em><code>edge_threshold</code></em> (Default: 0.75) – Proportion of
+boundary openness required to classify as edge. Lower values are more
+aggressive.<br>
+</li>
+<li>
+<em><code>min_cluster_size</code></em> (Default: 40) – Minimum
+cluster size. Lower values detect smaller artifacts.</li>
+</ul>
+<p><strong>Advanced &amp; Data Structure Parameters</strong></p>
+<ul>
+<li>
+<em><code>qc_metric</code></em> (Default: <code>"sum_gene"</code>) –
+Column used for outlier detection (<code>"sum_umi"</code> also
+possible).<br>
+</li>
+<li>
+<em><code>samples</code></em> (Default: <code>"sample_id"</code>) –
+Column for sample IDs; processed independently.<br>
+</li>
+<li>
+<em><code>batch_var</code></em> (Default: <code>"both"</code>) –
+Determines grouping for MAD calculation. Options:
+<code>"sample_id"</code>, <code>"slide"</code>, or
+<code>"both"</code>.<br>
+</li>
+<li>
+<em><code>shifted</code></em> (Default: FALSE) – Set TRUE for Visium
+odd-column shift correction.</li>
+</ul>
+<p><strong>Utility Parameters</strong></p>
+<ul>
+<li>
+<em><code>name</code></em> (Default: <code>"edge_dryspot"</code>) –
+Prefix for output columns.<br>
+</li>
+<li>
+<em><code>verbose</code></em> (Default: TRUE) – Print progress
+messages.<br>
+</li>
+<li>
+<em><code>keep_intermediate</code></em> (Default: FALSE) – Retain
+intermediate outlier columns.</li>
+</ul>
+<hr>
+</div>
+<div class="section level4">
+<h4 id="classifyedgedryspots-parameters">
+<strong><code>classifyEdgeDryspots()</code> Parameters</strong><a class="anchor" aria-label="anchor" href="#classifyedgedryspots-parameters"></a>
+</h4>
+<ul>
+<li>
+<em><code>min_spots</code></em> (Default: 20) – Minimum cluster size
+to classify as <code>"remove"</code> or <code>"flag"</code>.<br>
+</li>
+<li>
+<em><code>low_umi_threshold</code></em> (Default: 100) – UMI cutoff
+for low-quality spots.<br>
+</li>
+<li>
+<em><code>removal_threshold</code></em> (Default: 0.5) – Proportion
+of low-UMI spots required to classify cluster as
+<code>"remove"</code>.<br>
+</li>
+<li>
+<em><code>exclude_slides</code></em> (Default: NULL) – Vector of
+slides to ignore edge calls.<br>
+</li>
+<li>
+<em><code>name</code></em> (Default: <code>"edge_dryspot"</code>) –
+Must match name from <code><a href="../reference/detectEdgeDryspots.html">detectEdgeDryspots()</a></code>.</li>
+</ul>
+<hr>
+</div>
+</div>
+<div class="section level3">
+<h3 id="understanding-the-output-columns">Understanding the Output Columns<a class="anchor" aria-label="anchor" href="#understanding-the-output-columns"></a>
+</h3>
+<p>After both functions, several columns are added to
+<code>colData(spe)</code>:</p>
+<ul>
+<li>
+<strong><code>*_edge</code></strong> – Raw detection: Is the spot in
+a cluster touching the tissue border? (TRUE/FALSE)<br>
+</li>
+<li>
+<strong><code>*_problem_id</code></strong> – Raw detection: ID of
+the problem area.<br>
+</li>
+<li>
+<strong><code>*_problem_size</code></strong> – Raw detection: Size
+(number of spots) of the problem area.<br>
+</li>
+<li>
+<strong><code>*_classification</code></strong> – Final
+classification: <code>"remove"</code>, <code>"flag"</code>,
+<code>"small"</code>, <code>"keep"</code>.<br>
+</li>
+<li>
+<strong><code>*_enhanced</code></strong> – Final classification:
+More detailed context.<br>
+</li>
+<li>
+<strong><code>*_true_edges</code></strong> – Intermediate: Edge
+status after applying <code>exclude_slides</code>.</li>
+</ul>
+<hr>
 </div>
 <div class="section level3">
 <h3 id="loading-data">Loading Data<a class="anchor" aria-label="anchor" href="#loading-data"></a>
