@@ -33,75 +33,132 @@
 #' @importFrom scuttle isOutlier
 #' @export
 detectEdgeDryspots <- function(
-    spe, 
+    spe,
     qc_metric = "sum_gene",
-    samples = "sample_id", 
+    samples = "sample_id",
     mad_threshold = 3,
     edge_threshold = 0.75,
+    min_cluster_size = 40,
     shifted = FALSE,
     batch_var = "both",
-    name = "edge_dryspot", 
-    min_cluster_size = 40) {
+    name = "edge_dryspot",
+    verbose = TRUE,
+    keep_intermediate = FALSE) {
 
+  # --- Part 1: Outlier Detection (This part is fine, no changes needed) ---
   lg10_metric <- paste0("lg10_", qc_metric)
-  colData(spe)[[lg10_metric]] <- log10(colData(spe)[[qc_metric]])
-  
+  colData(spe)[[lg10_metric]] <- log10(colData(spe)[[qc_metric]] + 1)
+
   if (batch_var %in% c("slide", "both")) {
     if ("slide" %in% colnames(colData(spe))) {
-      outlier_slide_col <- paste0(qc_metric, "_3MAD_outlier_slide")
-      colData(spe)[[outlier_slide_col]] <- as.vector(scuttle::isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)$slide, type = "lower", nmads = mad_threshold))
+      outlier_slide_col <- paste0(qc_metric, "_", mad_threshold, "MAD_outlier_slide")
+      colData(spe)[[outlier_slide_col]] <- isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)$slide, type = "lower", nmads = mad_threshold)
     }
   }
   if (batch_var %in% c("sample_id", "both")) {
-    outlier_sample_col <- paste0(qc_metric, "_3MAD_outlier_sample")
-    colData(spe)[[outlier_sample_col]] <- as.vector(scuttle::isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)[[samples]], type = "lower", nmads = mad_threshold))
+    outlier_sample_col <- paste0(qc_metric, "_", mad_threshold, "MAD_outlier_sample")
+    colData(spe)[[outlier_sample_col]] <- isOutlier(colData(spe)[[lg10_metric]], subset = colData(spe)$in_tissue, batch = colData(spe)[[samples]], type = "lower", nmads = mad_threshold)
   }
+
+  outlier_binary_col <- paste0(qc_metric, "_", mad_threshold, "MAD_outlier_binary")
   if (batch_var == "both") {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]] | colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
+    colData(spe)[[outlier_binary_col]] <- colData(spe)[[paste0(qc_metric, "_", mad_threshold, "MAD_outlier_slide")]] | colData(spe)[[paste0(qc_metric, "_", mad_threshold, "MAD_outlier_sample")]]
   } else if (batch_var == "slide") {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_slide")]]
+    colData(spe)[[outlier_binary_col]] <- colData(spe)[[paste0(qc_metric, "_", mad_threshold, "MAD_outlier_slide")]]
   } else {
-    colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]] <- colData(spe)[[paste0(qc_metric, "_3MAD_outlier_sample")]]
+    colData(spe)[[outlier_binary_col]] <- colData(spe)[[paste0(qc_metric, "_", mad_threshold, "MAD_outlier_sample")]]
   }
-  colData(spe)[[paste0(qc_metric, "_3MAD_outlier_binary")]][!colData(spe)$in_tissue] <- FALSE
-  
+  colData(spe)[[outlier_binary_col]][!colData(spe)$in_tissue] <- FALSE
+
+  # Get unique samples and name them for lapply
   sampleList <- unique(colData(spe)[[samples]])
   names(sampleList) <- sampleList
+
+  # --- Part 2: Edge Detection (Optimized using lapply) ---
+  if (verbose) message("Detecting edges...")
+
+  # Efficiently calculate edges for all samples at once
+  edge_spots_list <- lapply(sampleList, function(sample_name) {
+    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == sample_name, ]
+    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", outlier_binary_col)])
+    rownames(xyz_df) <- rownames(tmp_dframe)
+    
+    clumpEdges(
+      xyz_df,
+      offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE],
+      shifted = shifted,
+      edge_threshold = edge_threshold,
+      min_cluster_size = min_cluster_size
+    )
+  })
   
-  message("Detecting edges...")
-  genes_edges <- lapply(sampleList, function(x) {
-    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == x, ]
-    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", paste0(qc_metric, "_3MAD_outlier_binary"))])
+  # Initialize the result column
+  colData(spe)[[paste0(name, "_edge")]] <- FALSE
+  # Accurately assign results back to the spe object
+  for(sample_name in names(edge_spots_list)) {
+    spots_to_flag <- edge_spots_list[[sample_name]]
+    if (length(spots_to_flag) > 0) {
+      colData(spe)[spots_to_flag, paste0(name, "_edge")] <- TRUE
+      if (verbose) message(sprintf("  Sample %s: %d edge spots detected", sample_name, length(spots_to_flag)))
+    }
+  }
+
+  # --- Part 3: Problem Area Detection (Optimized using lapply) ---
+  if (verbose) message("Finding problem areas...")
+
+  # Efficiently find problem areas for all samples
+  problem_areas_list <- lapply(sampleList, function(sample_name) {
+    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == sample_name, ]
+    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", outlier_binary_col)])
     rownames(xyz_df) <- rownames(tmp_dframe)
 
-    result <- clumpEdges(xyz_df, offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE], shifted = shifted, edge_threshold = edge_threshold, min_cluster_size = min_cluster_size)
-    return(result)
+    problemAreas(
+      xyz_df,
+      offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE],
+      uniqueIdentifier = sample_name,
+      shifted = shifted,
+      min_cluster_size = min_cluster_size
+    )
   })
-  
-  colData(spe)[[paste0(name, "_edge")]] <- FALSE
-  edge_spots <- unlist(genes_edges)
-  if (length(edge_spots) > 0) {
-    colData(spe)[edge_spots, paste0(name, "_edge")] <- TRUE
-  }
-  
-  message("Finding problem areas...")
-  genes_probs <- lapply(sampleList, function(x) {
-    tmp_dframe <- colData(spe)[colData(spe)[[samples]] == x, ]
-    xyz_df <- as.data.frame(tmp_dframe[, c("array_row", "array_col", paste0(qc_metric, "_3MAD_outlier_binary"))])
-    rownames(xyz_df) <- rownames(tmp_dframe)
-    result <- problemAreas(xyz_df, offTissue = rownames(tmp_dframe)[tmp_dframe$in_tissue == FALSE], uniqueIdentifier = x, shifted = shifted, min_cluster_size = min_cluster_size)
-    return(result)
-  })
-  
-  genes_probs <- do.call(rbind, genes_probs)
+
+  # Combine all problem area data frames into one
+  all_problem_areas <- do.call(rbind, problem_areas_list)
+
+  # Initialize result columns
   colData(spe)[[paste0(name, "_problem_id")]] <- NA
   colData(spe)[[paste0(name, "_problem_size")]] <- 0
-  if (nrow(genes_probs) > 0) {
-    colData(spe)[genes_probs$spotcode, paste0(name, "_problem_id")] <- genes_probs$clumpID
-    colData(spe)[genes_probs$spotcode, paste0(name, "_problem_size")] <- genes_probs$clumpSize
+  
+  # Accurately assign results in one vectorized operation
+  if (nrow(all_problem_areas) > 0) {
+    # Match by barcode (spotcode) which should be unique within the problem area dataframe
+    colData(spe)[all_problem_areas$spotcode, paste0(name, "_problem_id")] <- all_problem_areas$clumpID
+    colData(spe)[all_problem_areas$spotcode, paste0(name, "_problem_size")] <- all_problem_areas$clumpSize
   }
   
-  message("Edge dryspot detection completed!")
+  # Clean up intermediate columns if requested
+  if (!keep_intermediate) {
+    intermediate_cols <- c(
+      lg10_metric,
+      paste0(qc_metric, "_", mad_threshold, "MAD_outlier_slide"),
+      paste0(qc_metric, "_", mad_threshold, "MAD_outlier_sample"),
+      outlier_binary_col
+    )
+    
+    # Only remove columns that exist
+    existing_cols <- intersect(intermediate_cols, colnames(colData(spe)))
+    if (length(existing_cols) > 0) {
+      colData(spe) <- colData(spe)[, !colnames(colData(spe)) %in% existing_cols]
+      if (verbose) message("Removed intermediate columns: ", paste(existing_cols, collapse = ", "))
+    }
+  }
+  
+  if (verbose) {
+    total_edge_spots <- sum(colData(spe)[[paste0(name, "_edge")]], na.rm = TRUE)
+    total_problem_spots <- sum(!is.na(colData(spe)[[paste0(name, "_problem_id")]]))
+    message(sprintf("Edge dryspot detection completed!\n  Total edge spots: %d\n  Total problem area spots: %d", 
+                    total_edge_spots, total_problem_spots))
+  }
+  
   return(spe)
 }
 
